@@ -113,7 +113,7 @@ configure_tor_mirror() {
   if confirm "Do you want to configure the system to use an onion (Tor) mirror for updating the system and installing/updating packages?"; then
     print "Configuring /etc/installurl for Tor mirror..."
     INSTALLURL_FILE="/etc/installurl"
-    print "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/" > "$INSTALLURL_FILE"
+    print "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/pub/OpenBSD/" > "$INSTALLURL_FILE"
 
     PROFILE_FILE="/etc/profile"
     if ! grep -q "FETCH_CMD=" "$PROFILE_FILE"; then
@@ -129,9 +129,9 @@ configure_tor_mirror() {
   fi
 }
 
-# Function to configure firmware mirror
-configure_firmware_mirror() {
-  if confirm "Do you want to configure the firmware mirror?"; then
+# Function to disable firmware updates
+disable_firmware_updates() {
+  if confirm "Do you want to disable firmware updates?"; then
     print "Configuring firmware mirror..."
     if ! grep -q "firmware.openbsd.org" /etc/hosts; then
       print "Adding firmware.openbsd.org entry to /etc/hosts..."
@@ -213,7 +213,7 @@ configure_user
 configure_firewall
 setup_tor
 configure_tor_mirror
-configure_firmware_mirror
+disable_firmware_updates
 disable_usb_controllers
 configure_clamav
 harden_malloc
