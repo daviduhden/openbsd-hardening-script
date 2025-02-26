@@ -152,7 +152,7 @@ EOF
 }
 
 # Function to configure ClamAV services
-configure_services() {
+configure_clamav() {
   if confirm "Do you want to configure ClamAV antivirus and freshclam updater?"; then
     print "Configuring ClamAV..."
     rcctl enable clamav
@@ -162,9 +162,9 @@ configure_services() {
   fi
 }
 
-# Function to apply system configuration changes
-apply_system_configuration() {
-  if confirm "Do you want to apply system configuration changes?"; then
+# Function to apply system configuration changes for memory allocation hardening
+harden_malloc() {
+  if confirm "Do you want to apply system configuration changes for memory allocation hardening?"; then
     print "Applying vm.malloc_conf=S..."
     SYSCTL_CONF="/etc/sysctl.conf"
     grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" 2>/dev/null || print "vm.malloc_conf=S" >> "$SYSCTL_CONF"
@@ -207,8 +207,8 @@ setup_tor
 configure_tor_mirror
 configure_firmware_mirror
 disable_usb_controllers
-configure_services
-apply_system_configuration
+configure_clamav
+harden_malloc
 configure_anacron
 
 print "OpenBSD configuration completed."
