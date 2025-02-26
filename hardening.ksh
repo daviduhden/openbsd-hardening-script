@@ -250,11 +250,11 @@ print "OpenBSD configuration completed."
 # 7. Disabling USB Controllers:
 #    - Disables USB controllers.
 #
-# 8. System-wide Services:
-#    - Enables and starts ClamAV and its updater.
-#
-# 9. System Configuration:
+# 8. Malloc Configuration:
 #    - Applies memory allocation hardening by setting vm.malloc_conf=S.
+#
+# 9. ClamAV Services:
+#    - Enables and starts ClamAV and its updater.
 #
 # 10. Anacron Configuration:
 #     - Sets up /etc/anacrontab with daily, weekly, and monthly tasks.
