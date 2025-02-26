@@ -75,7 +75,7 @@ configure_user() {
         grep -q "umask 077" "$HOME_DIR/.profile" || print "umask 077" >> "$HOME_DIR/.profile"
       fi
     else
-      print "Home directory for $USER_TO_CONFIG does not exist. Check your configuration."
+      print "Home directory for $USER_TO_CONFIG does not exist."
     fi
   fi
 }
