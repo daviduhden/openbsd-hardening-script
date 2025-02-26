@@ -137,12 +137,8 @@ if confirm "Do you want to configure the firmware mirror?"; then
   fi
 fi
 
-# --- 8. Additional Hardening Measures ---
-if confirm "Do you want to apply additional hardening measures?"; then
-  # 8.1. Disable Webcam and Microphone (reminder)
-  echo "Reminder: In OpenBSD, webcam and microphone recording are disabled by default."
-
-  # 8.2. Disabling USB Ports
+# --- 8. Disabling USB Controllers ---
+if confirm "Do you want to disable USB controllers?"; then
   echo "Disabling USB controllers..."
   cat > /etc/bsd.re-config <<'EOF'
 disable usb
@@ -227,13 +223,16 @@ echo "OpenBSD configuration completed."
 #    - Notes that webcam/microphone are disabled by default.
 #    - Disables USB controllers.
 #
-# 8. System-wide Services:
+# 8. Disabling USB Controllers:
+#    - Disables USB controllers.
+#
+# 9. System-wide Services:
 #    - Enables and starts ClamAV and its updater.
 #
-# 9. System Configuration:
+# 10. System Configuration:
 #    - Applies memory allocation hardening by setting vm.malloc_conf=S.
 #
-# 10. Anacron Configuration:
+# 11. Anacron Configuration:
 #     - Sets up /etc/anacrontab with daily, weekly, and monthly tasks.
 #     - Adds entries to root's crontab to run anacron at boot and daily.
 #########################################################################
