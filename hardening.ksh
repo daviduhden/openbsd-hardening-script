@@ -1,10 +1,18 @@
 #!/bin/ksh
 #
-# Script to automate configuration from the guides:
-#  - OpenBSD workstation hardening
-#  - OpenBSD mirror over Tor (Tor mirror only)
-#  - Firmware mirror configuration
-#  - Using anacron to run periodic tasks
+# Copyright (c) 2025 David Uhden Collado <david@uhden.dev>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #
 # Default user is set to "user".
 #
@@ -131,13 +139,10 @@ fi
 
 # --- 8. Additional Hardening Measures ---
 if confirm "Do you want to apply additional hardening measures?"; then
-  # 8.1. Live in a Temporary File-System (note only)
-  echo "Note: To use a temporary file-system for your home, install and configure 'home-impermanence' (not included in this script)."
-
-  # 8.2. Disable Webcam and Microphone (reminder)
+  # 8.1. Disable Webcam and Microphone (reminder)
   echo "Reminder: In OpenBSD, webcam and microphone recording are disabled by default."
 
-  # 8.3. Disabling USB Ports
+  # 8.2. Disabling USB Ports
   echo "Disabling USB controllers..."
   cat > /etc/bsd.re-config <<'EOF'
 disable usb
@@ -210,7 +215,7 @@ echo "OpenBSD configuration completed."
 #    - Enables and starts the Tor service.
 #
 # 5. Mirror Configuration over Tor:
-#    - Sets /etc/installurl to the Tor onion mirror (replace placeholder with the actual address).
+#    - Sets /etc/installurl to the Tor onion mirror.
 #    - Exports FETCH_CMD for pkg_* commands to use curl with a Tor SOCKS5 proxy.
 #    - Patches sysupgrade and syspatch to invoke torsocks.
 #
