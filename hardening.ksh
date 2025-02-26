@@ -80,17 +80,17 @@ configure_user() {
   fi
 }
 
-# Function to configure PF firewall
+# Function to configure the firewall
 configure_firewall() {
-  if confirm "Do you want to configure the PF firewall?"; then
+  if confirm "Do you want to configure the firewall?"; then
     print "Configuring PF..."
     PF_CONF="/etc/pf.conf"
     [ -f "$PF_CONF" ] && cp "$PF_CONF" "${PF_CONF}.bak"
     cat > "$PF_CONF" <<'EOF'
-# Custom PF configuration for workstation hardening
+# Custom PF configuration for workstation
 block all
 pass out inet
-# Allow ICMP because it's useful
+# Allow ICMP
 pass in proto icmp
 # Block outbound traffic for the default user (change "user" if needed)
 block return out proto { tcp udp } user user
@@ -110,7 +110,7 @@ setup_tor() {
 
 # Function to configure mirror over Tor
 configure_tor_mirror() {
-  if confirm "Do you want to configure the system to use an onion (Tor) mirror for package fetching?"; then
+  if confirm "Do you want to configure the system to use an onion (Tor) mirror for updating the system and installing/updating packages?"; then
     print "Configuring /etc/installurl for Tor mirror..."
     INSTALLURL_FILE="/etc/installurl"
     print "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/" > "$INSTALLURL_FILE"
