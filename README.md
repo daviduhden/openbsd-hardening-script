@@ -15,6 +15,7 @@ This script automates the hardening of an OpenBSD workstation based on various g
 - Configures ClamAV antivirus and freshclam updater.
 - Applies system configuration changes for memory allocation hardening.
 - Sets up anacron for periodic tasks.
+- Makes shell environment files immutable using chflags.
 
 ## Requirements
 
