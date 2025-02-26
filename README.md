@@ -2,7 +2,7 @@
 
 ## Overview
 
-This script automates the configuration of an OpenBSD workstation based on various guides from [Solène Rapenne](https://dataswamp.org/~solene/index.html). It includes steps for installing necessary packages, configuring user settings, setting up a firewall, enabling Tor, configuring mirrors, and applying additional hardening measures.
+This script automates the hardening of an OpenBSD workstation based on various guides from [Solène Rapenne](https://dataswamp.org/~solene/index.html). Any contribution is highly appreciated.
 
 ## Features
 
