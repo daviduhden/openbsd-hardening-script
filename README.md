@@ -8,9 +8,9 @@ This script automates the configuration of an OpenBSD workstation based on vario
 
 - Installs essential packages: anacron, tor, torsocks, and clamav.
 - Configures user settings to enhance security.
-- Sets up a custom PF firewall configuration.
+- Sets up a hardened firewall configuration.
 - Enables and configures the Tor service.
-- Configures the system to use a Tor onion mirror for package fetching.
+- Configures the system to use a onion (Tor) mirror for updating the system and installing/updating packages.
 - Disables USB ports (Only use it if you have a PS/2 keyboard and mouse).
 - Configures ClamAV antivirus and freshclam updater.
 - Applies system configuration changes for memory allocation hardening.
