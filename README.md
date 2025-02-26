@@ -11,7 +11,7 @@ This script automates the configuration of an OpenBSD workstation based on vario
 - Sets up a hardened firewall configuration.
 - Enables and configures the Tor service.
 - Configures the system to use a onion (Tor) mirror for updating the system and installing/updating packages.
-- Disables USB ports (Only use it if you have a PS/2 keyboard and mouse).
+- Disables USB ports (Only use this if you have a PS/2 keyboard and mouse).
 - Configures ClamAV antivirus and freshclam updater.
 - Applies system configuration changes for memory allocation hardening.
 - Sets up anacron for periodic tasks.
