@@ -24,11 +24,11 @@
 confirm() {
   while true; do
     print -n "$1 [y/n]: "
-    read yn
+    read -r yn
     case "$yn" in
-      [Yy]* ) return 0;;
-      [Nn]* ) return 1;;
-      * ) print "Please answer yes or no.";;
+      [Yy]* ) return 0;;  # User confirmed with 'yes'
+      [Nn]* ) return 1;;  # User declined with 'no'
+      * ) print "Please answer yes or no.";;  # Invalid input, prompt again
     esac
   done
 }
@@ -37,7 +37,7 @@ confirm() {
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
     print "This script must be run as root." >&2
-    exit 1
+    exit 1  # Exit if not running as root
   fi
 }
 
@@ -48,7 +48,7 @@ install_packages() {
     for pkg in anacron tor torsocks clamav; do
       if ! pkg_info "$pkg" >/dev/null 2>&1; then
         print "Installing $pkg..."
-        pkg_add "$pkg" || { print "Error installing $pkg"; exit 1; }
+        pkg_add "$pkg" || { print "Error installing $pkg"; exit 1; }  # Install package or exit on error
       else
         print "$pkg is already installed."
       fi
@@ -60,10 +60,16 @@ install_packages() {
 configure_user() {
   if confirm "Do you want to configure the user settings?"; then
     USER_TO_CONFIG="user"
-    if grep '^wheel:' /etc/group | grep -q "\b${USER_TO_CONFIG}\b"; then
+    PASSWORD=$(openssl rand -base64 12)
+    useradd -m -s /bin/ksh ${USER_TO_CONFIG}
+    ENCRYPTED_PASSWORD=$(openssl passwd -6 "$PASSWORD")
+    usermod -p "$ENCRYPTED_PASSWORD" "$USER_TO_CONFIG"
+    print "User 'user' created with password: $PASSWORD"
+
+    if grep '^wheel:' /etc/group | grep -w -q "${USER_TO_CONFIG}"; then
       print "Removing $USER_TO_CONFIG from the wheel group..."
       cp /etc/group /etc/group.bak
-      sed -i '' -e "s/\b${USER_TO_CONFIG}\b//g" /etc/group
+      sed -i.bak -e "s/\b${USER_TO_CONFIG}\b//g" /etc/group  # Remove user from wheel group
     fi
 
     HOME_DIR="/home/${USER_TO_CONFIG}"
@@ -72,7 +78,7 @@ configure_user() {
       chown ${USER_TO_CONFIG}:${USER_TO_CONFIG} "$HOME_DIR"
       chmod 700 "$HOME_DIR"
       if [ -f "$HOME_DIR/.profile" ]; then
-        grep -q "umask 077" "$HOME_DIR/.profile" || print "umask 077" >> "$HOME_DIR/.profile"
+        grep -Fq "umask 077" "$HOME_DIR/.profile" || print "umask 077" >> "$HOME_DIR/.profile"  # Set umask in .profile
       fi
     else
       print "Home directory for $USER_TO_CONFIG does not exist."
@@ -85,7 +91,7 @@ configure_firewall() {
   if confirm "Do you want to configure the firewall?"; then
     print "Configuring PF..."
     PF_CONF="/etc/pf.conf"
-    [ -f "$PF_CONF" ] && cp "$PF_CONF" "${PF_CONF}.bak"
+    [ -f "$PF_CONF" ] && cp "$PF_CONF" "${PF_CONF}.bak"  # Backup existing PF configuration
     cat > "$PF_CONF" <<'EOF'
 # Custom PF configuration for workstation
 block all
@@ -95,7 +101,7 @@ pass in proto icmp
 # Block outbound traffic for the default user (change "user" if needed)
 block return out proto { tcp udp } user user
 EOF
-    pfctl -f "$PF_CONF"
+    pfctl -f "$PF_CONF"  # Load new PF configuration
   fi
 }
 
@@ -123,7 +129,7 @@ configure_tor_mirror() {
     print "Patching sysupgrade and syspatch to use torsocks..."
     for bin in sysupgrade syspatch; do
       if [ -f "/usr/sbin/$bin" ]; then
-        sed -i.bak 's,ftp -N,/usr/local/bin/torsocks &,' "/usr/sbin/$bin" 2>/dev/null
+        sed -i.bak 's,ftp -N,/usr/local/bin/torsocks &,' "/usr/sbin/$bin" 2>/dev/null  # Patch binaries to use torsocks
       fi
     done
   fi
@@ -135,7 +141,7 @@ disable_firmware_updates() {
     print "Configuring firmware mirror..."
     if ! grep -q "firmware.openbsd.org" /etc/hosts; then
       print "Adding firmware.openbsd.org entry to /etc/hosts..."
-      print "127.0.0.9 firmware.openbsd.org" >> /etc/hosts
+      print "127.0.0.9 firmware.openbsd.org" >> /etc/hosts  # Add entry to /etc/hosts
     fi
   fi
 }
@@ -167,8 +173,8 @@ harden_malloc() {
   if confirm "Do you want to apply system configuration changes for memory allocation hardening?"; then
     print "Applying vm.malloc_conf=S..."
     SYSCTL_CONF="/etc/sysctl.conf"
-    grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" 2>/dev/null || print "vm.malloc_conf=S" >> "$SYSCTL_CONF"
-    sysctl vm.malloc_conf=S
+    grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" 2>/dev/null || print "vm.malloc_conf=S" >> "$SYSCTL_CONF"  # Add setting to sysctl.conf
+    sysctl vm.malloc_conf=S  # Apply setting immediately
   fi
 }
 
@@ -206,6 +212,19 @@ EOF
   fi
 }
 
+# Function to make shell environment files immutable
+make_shell_files_immutable() {
+  if confirm "Do you want to make shell environment files immutable?"; then
+    print "Making shell environment files immutable..."
+    for file in /etc/profile /etc/csh.cshrc /etc/ksh.kshrc; do
+      if [ -f "$file" ]; then
+        chflags schg "$file"
+        print "Set schg flag on $file"
+      fi
+    done
+  fi
+}
+
 # Main script execution
 check_root
 install_packages
@@ -218,6 +237,7 @@ disable_usb_controllers
 configure_clamav
 harden_malloc
 configure_anacron
+make_shell_files_immutable
 
 print "OpenBSD configuration completed."
 
@@ -259,4 +279,8 @@ print "OpenBSD configuration completed."
 # 10. Anacron Configuration:
 #     - Sets up /etc/anacrontab with daily, weekly, and monthly tasks.
 #     - Adds entries to root's crontab to run anacron at boot and daily.
+#
+# 11. Shell Environment Files:
+#     - Makes shell environment files immutable using chflags.
+#
 #########################################################################
