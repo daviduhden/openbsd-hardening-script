@@ -23,19 +23,20 @@
 # Function to prompt the user for confirmation
 confirm() {
   while true; do
-    read -p "$1 [y/n]: " yn
-    case $yn in
+    print -n "$1 [y/n]: "
+    read yn
+    case "$yn" in
       [Yy]* ) return 0;;
       [Nn]* ) return 1;;
-      * ) echo "Please answer yes or no.";;
+      * ) print "Please answer yes or no.";;
     esac
   done
 }
 
 # Function to check for root privileges
 check_root() {
-  if [[ $EUID -ne 0 ]]; then
-    echo "This script must be run as root." >&2
+  if [ "$(id -u)" -ne 0 ]; then
+    print "This script must be run as root." >&2
     exit 1
   fi
 }
@@ -43,13 +44,13 @@ check_root() {
 # Function to install necessary packages
 install_packages() {
   if confirm "Do you want to install necessary packages?"; then
-    echo "Installing necessary packages..."
+    print "Installing necessary packages..."
     for pkg in anacron tor torsocks clamav; do
       if ! pkg_info "$pkg" >/dev/null 2>&1; then
-        echo "Installing $pkg..."
-        pkg_add "$pkg" || { echo "Error installing $pkg"; exit 1; }
+        print "Installing $pkg..."
+        pkg_add "$pkg" || { print "Error installing $pkg"; exit 1; }
       else
-        echo "$pkg is already installed."
+        print "$pkg is already installed."
       fi
     done
   fi
@@ -60,21 +61,21 @@ configure_user() {
   if confirm "Do you want to configure the user settings?"; then
     USER_TO_CONFIG="user"
     if grep '^wheel:' /etc/group | grep -q "\b${USER_TO_CONFIG}\b"; then
-      echo "Removing $USER_TO_CONFIG from the wheel group..."
+      print "Removing $USER_TO_CONFIG from the wheel group..."
       cp /etc/group /etc/group.bak
       sed -i '' -e "s/\b${USER_TO_CONFIG}\b//g" /etc/group
     fi
 
     HOME_DIR="/home/${USER_TO_CONFIG}"
     if [ -d "$HOME_DIR" ]; then
-      echo "Setting permissions on $HOME_DIR..."
+      print "Setting permissions on $HOME_DIR..."
       chown ${USER_TO_CONFIG}:${USER_TO_CONFIG} "$HOME_DIR"
       chmod 700 "$HOME_DIR"
       if [ -f "$HOME_DIR/.profile" ]; then
-        grep -q "umask 077" "$HOME_DIR/.profile" || echo "umask 077" >> "$HOME_DIR/.profile"
+        grep -q "umask 077" "$HOME_DIR/.profile" || print "umask 077" >> "$HOME_DIR/.profile"
       fi
     else
-      echo "Home directory for $USER_TO_CONFIG does not exist. Check your configuration."
+      print "Home directory for $USER_TO_CONFIG does not exist. Check your configuration."
     fi
   fi
 }
@@ -82,7 +83,7 @@ configure_user() {
 # Function to configure PF firewall
 configure_firewall() {
   if confirm "Do you want to configure the PF firewall?"; then
-    echo "Configuring PF..."
+    print "Configuring PF..."
     PF_CONF="/etc/pf.conf"
     [ -f "$PF_CONF" ] && cp "$PF_CONF" "${PF_CONF}.bak"
     cat > "$PF_CONF" <<'EOF'
@@ -101,7 +102,7 @@ EOF
 # Function to setup Tor service
 setup_tor() {
   if confirm "Do you want to enable and start the Tor service?"; then
-    echo "Enabling and starting Tor..."
+    print "Enabling and starting Tor..."
     rcctl enable tor
     rcctl start tor
   fi
@@ -109,17 +110,17 @@ setup_tor() {
 
 # Function to configure mirror over Tor
 configure_tor_mirror() {
-  if confirm "Do you want to configure the system to use a onion (Tor) mirror for package fetching?"; then
-    echo "Configuring /etc/installurl for Tor mirror..."
+  if confirm "Do you want to configure the system to use an onion (Tor) mirror for package fetching?"; then
+    print "Configuring /etc/installurl for Tor mirror..."
     INSTALLURL_FILE="/etc/installurl"
-    echo "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/" > "$INSTALLURL_FILE"
+    print "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/" > "$INSTALLURL_FILE"
 
     PROFILE_FILE="/etc/profile"
     if ! grep -q "FETCH_CMD=" "$PROFILE_FILE"; then
-      echo 'export FETCH_CMD="/usr/local/bin/curl -L -s -q -N -x socks5h://127.0.0.1:9050"' >> "$PROFILE_FILE"
+      print 'export FETCH_CMD="/usr/local/bin/curl -L -s -q -N -x socks5h://127.0.0.1:9050"' >> "$PROFILE_FILE"
     fi
 
-    echo "Patching sysupgrade and syspatch to use torsocks..."
+    print "Patching sysupgrade and syspatch to use torsocks..."
     for bin in sysupgrade syspatch; do
       if [ -f "/usr/sbin/$bin" ]; then
         sed -i.bak 's,ftp -N,/usr/local/bin/torsocks &,' "/usr/sbin/$bin" 2>/dev/null
@@ -131,10 +132,10 @@ configure_tor_mirror() {
 # Function to configure firmware mirror
 configure_firmware_mirror() {
   if confirm "Do you want to configure the firmware mirror?"; then
-    echo "Configuring firmware mirror..."
+    print "Configuring firmware mirror..."
     if ! grep -q "firmware.openbsd.org" /etc/hosts; then
-      echo "Adding firmware.openbsd.org entry to /etc/hosts..."
-      echo "127.0.0.9 firmware.openbsd.org" >> /etc/hosts
+      print "Adding firmware.openbsd.org entry to /etc/hosts..."
+      print "127.0.0.9 firmware.openbsd.org" >> /etc/hosts
     fi
   fi
 }
@@ -142,7 +143,7 @@ configure_firmware_mirror() {
 # Function to disable USB controllers
 disable_usb_controllers() {
   if confirm "Do you want to disable USB controllers?"; then
-    echo "Disabling USB controllers..."
+    print "Disabling USB controllers..."
     cat > /etc/bsd.re-config <<'EOF'
 disable usb
 disable xhci
@@ -153,7 +154,7 @@ EOF
 # Function to configure ClamAV services
 configure_services() {
   if confirm "Do you want to configure ClamAV antivirus and freshclam updater?"; then
-    echo "Configuring ClamAV..."
+    print "Configuring ClamAV..."
     rcctl enable clamav
     rcctl enable freshclam
     rcctl start clamav
@@ -164,9 +165,9 @@ configure_services() {
 # Function to apply system configuration changes
 apply_system_configuration() {
   if confirm "Do you want to apply system configuration changes?"; then
-    echo "Applying vm.malloc_conf=S..."
+    print "Applying vm.malloc_conf=S..."
     SYSCTL_CONF="/etc/sysctl.conf"
-    grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" 2>/dev/null || echo "vm.malloc_conf=S" >> "$SYSCTL_CONF"
+    grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" 2>/dev/null || print "vm.malloc_conf=S" >> "$SYSCTL_CONF"
     sysctl vm.malloc_conf=S
   fi
 }
@@ -174,7 +175,7 @@ apply_system_configuration() {
 # Function to configure anacron for periodic tasks
 configure_anacron() {
   if confirm "Do you want to configure anacron for periodic tasks?"; then
-    echo "Configuring anacron..."
+    print "Configuring anacron..."
     ANACRON_TAB="/etc/anacrontab"
     cat > "$ANACRON_TAB" <<'EOF'
 SHELL=/bin/sh
@@ -189,8 +190,8 @@ EOF
     CRON_TMP="/tmp/cron.$$"
     crontab -l > "$CRON_TMP" 2>/dev/null
     if ! grep -q "/usr/local/sbin/anacron -ds" "$CRON_TMP"; then
-      echo "@reboot /usr/local/sbin/anacron -ds" >> "$CRON_TMP"
-      echo "0 1 * * * /usr/local/sbin/anacron -ds" >> "$CRON_TMP"
+      print "@reboot /usr/local/sbin/anacron -ds" >> "$CRON_TMP"
+      print "0 1 * * * /usr/local/sbin/anacron -ds" >> "$CRON_TMP"
       crontab "$CRON_TMP"
     fi
     rm -f "$CRON_TMP"
@@ -210,7 +211,7 @@ configure_services
 apply_system_configuration
 configure_anacron
 
-echo "OpenBSD configuration completed."
+print "OpenBSD configuration completed."
 
 #########################################################################
 # Explanation of Main Sections:
