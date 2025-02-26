@@ -36,7 +36,7 @@ This script automates the configuration of an OpenBSD workstation based on vario
 
 3. Run the script:
     ```sh
-    doas ./hardening.ksh
+    ksh hardening.ksh
     ```
 
 4. Follow the interactive prompts to apply the desired configurations.
