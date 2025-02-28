@@ -61,8 +61,8 @@ configure_user() {
   if confirm "Do you want to configure the user settings?"; then
     USER_TO_CONFIG="user"
     PASSWORD=$(openssl rand -base64 12)
+    ENCRYPTED_PASSWORD=$(openssl passwd -1 "$PASSWORD")
     useradd -m -s /bin/ksh ${USER_TO_CONFIG}
-    ENCRYPTED_PASSWORD=$(openssl passwd -6 "$PASSWORD")
     usermod -p "$ENCRYPTED_PASSWORD" "$USER_TO_CONFIG"
     print "User 'user' created with password: $PASSWORD"
 
