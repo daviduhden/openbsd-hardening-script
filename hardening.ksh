@@ -121,10 +121,14 @@ configure_tor_mirror() {
     INSTALLURL_FILE="/etc/installurl"
     print "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/pub/OpenBSD/" > "$INSTALLURL_FILE"
 
-    PROFILE_FILE="/etc/profile"
-    if ! grep -q "FETCH_CMD=" "$PROFILE_FILE"; then
-      print 'export FETCH_CMD="/usr/local/bin/curl -L -s -q -N -x socks5h://127.0.0.1:9050"' >> "$PROFILE_FILE"
+    LOGIN_CONF_FILE="/etc/login.conf"
+    if ! grep -q "setenv=FETCH_CMD" "$LOGIN_CONF_FILE"; then
+      print 'default:\' >> "$LOGIN_CONF_FILE"
+      print '    :setenv=FETCH_CMD=/usr/local/bin/curl -L -s -q -N -x socks5h://127.0.0.1:9050:\' >> "$LOGIN_CONF_FILE"
     fi
+
+    print "Rebuilding login.conf database..."
+    cap_mkdb /etc/login.conf
 
     print "Patching sysupgrade and syspatch to use torsocks..."
     for bin in sysupgrade syspatch; do
