@@ -93,13 +93,11 @@ configure_firewall() {
     PF_CONF="/etc/pf.conf"
     [ -f "$PF_CONF" ] && cp "$PF_CONF" "${PF_CONF}.bak"  # Backup existing PF configuration
     cat > "$PF_CONF" <<'EOF'
-# Custom PF configuration for workstation
+# Custom PF configuration
 block all
 pass out inet
 # Allow ICMP
 pass in proto icmp
-# Block outbound traffic for the default user (change "user" if needed)
-block return out proto { tcp udp } user user
 EOF
     pfctl -f "$PF_CONF"  # Load new PF configuration
   fi
