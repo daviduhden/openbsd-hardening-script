@@ -160,13 +160,25 @@ EOF
 }
 
 # Function to configure ClamAV services
-configure_clamav() {
-  if confirm "Do you want to configure ClamAV antivirus and freshclam updater?"; then
+configure_clamd() {
+  if confirm "Do you want to configure ClamAV antivirus?"; then
     print "Configuring ClamAV..."
-    rcctl enable clamav
+    rcctl enable clamd
     rcctl enable freshclam
-    rcctl start clamav
+    rcctl start clamd
     rcctl start freshclam
+
+    # Remove "Example" from ClamD and Freshclam configuration files
+    CLAMD_CONF="/etc/clamd.conf"
+    FRESHCLAM_CONF="/etc/freshclam.conf"
+    if [ -f "$CLAMD_CONF" ]; then
+      sed -i.bak '/^Example$/d' "$CLAMD_CONF"
+      print "Removed 'Example' from $CLAMD_CONF"
+    fi
+    if [ -f "$FRESHCLAM_CONF" ]; then
+      sed -i.bak '/^Example$/d' "$FRESHCLAM_CONF"
+      print "Removed 'Example' from $FRESHCLAM_CONF"
+    fi
   fi
 }
 
