@@ -60,12 +60,13 @@ install_packages() {
 configure_user() {
   if confirm "Do you want to configure the user settings?"; then
     USER_TO_CONFIG="user"
-    PASSWORD=$(openssl rand -base64 12)
-    ENCRYPTED_PASSWORD=$(openssl passwd -1 "$PASSWORD")
-    useradd -m -s /bin/ksh ${USER_TO_CONFIG}
-    usermod -p "$ENCRYPTED_PASSWORD" "$USER_TO_CONFIG"
+    PASSWORD=$(openssl rand -base64 12)  # Generate a random password
+    ENCRYPTED_PASSWORD=$(openssl passwd -1 "$PASSWORD")  # Encrypt the password
+    useradd -m -s /bin/ksh ${USER_TO_CONFIG}  # Create the user with a home directory and ksh shell
+    usermod -p "$ENCRYPTED_PASSWORD" "$USER_TO_CONFIG"  # Set the encrypted password for the user
     print "User 'user' created with password: $PASSWORD"
 
+    # Remove the user from the wheel group if present
     if grep '^wheel:' /etc/group | grep -w -q "${USER_TO_CONFIG}"; then
       print "Removing $USER_TO_CONFIG from the wheel group..."
       cp /etc/group /etc/group.bak
@@ -75,8 +76,8 @@ configure_user() {
     HOME_DIR="/home/${USER_TO_CONFIG}"
     if [ -d "$HOME_DIR" ]; then
       print "Setting permissions on $HOME_DIR..."
-      chown ${USER_TO_CONFIG}:${USER_TO_CONFIG} "$HOME_DIR"
-      chmod 700 "$HOME_DIR"
+      chown ${USER_TO_CONFIG}:${USER_TO_CONFIG} "$HOME_DIR"  # Set ownership
+      chmod 700 "$HOME_DIR"  # Set permissions
       if [ -f "$HOME_DIR/.profile" ]; then
         grep -Fq "umask 077" "$HOME_DIR/.profile" || print "umask 077" >> "$HOME_DIR/.profile"  # Set umask in .profile
       fi
@@ -171,13 +172,13 @@ configure_clamd() {
     CLAMD_CONF="/etc/clamd.conf"
     FRESHCLAM_CONF="/etc/freshclam.conf"
     if [ -f "$CLAMD_CONF" ]; then
-      sed -i.bak '/^Example$/d' "$CLAMD_CONF"
+      sed -i.bak '/^Example$/d' "$CLAMD_CONF"  # Remove 'Example' line
       print "Removed 'Example' from $CLAMD_CONF"
-      sed -i '/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' "$CLAMD_CONF"
+      sed -i '/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' "$CLAMD_CONF"  # Uncomment LocalSocket line
       print "Uncommented 'LocalSocket /run/clamav/clamd.sock' in $CLAMD_CONF"
     fi
     if [ -f "$FRESHCLAM_CONF" ]; then
-      sed -i.bak '/^Example$/d' "$FRESHCLAM_CONF"
+      sed -i.bak '/^Example$/d' "$FRESHCLAM_CONF"  # Remove 'Example' line
       print "Removed 'Example' from $FRESHCLAM_CONF"
     fi
   fi
@@ -208,7 +209,7 @@ MAILTO=""
 30 5 monthly_maintenance  /bin/sh /etc/monthly
 EOF
 
-    CRON_TMP=$(mktemp /tmp/cron.XXXXXX)
+    CRON_TMP=$(mktemp /tmp/cron.XXXXXX)  # Securely create a temporary file
     crontab -l > "$CRON_TMP" 2>/dev/null
     if ! grep -q "/usr/local/sbin/anacron -ds" "$CRON_TMP"; then
       print "@reboot /usr/local/sbin/anacron -ds" >> "$CRON_TMP"
@@ -232,7 +233,7 @@ make_shell_files_immutable() {
     print "Making shell environment files immutable..."
     for file in /etc/profile /etc/csh.cshrc /etc/ksh.kshrc; do
       if [ -f "$file" ]; then
-        chflags schg "$file"
+        chflags schg "$file"  # Set schg flag to make the file immutable
         print "Set schg flag on $file"
       fi
     done
@@ -248,7 +249,7 @@ setup_tor
 configure_tor_mirror
 disable_firmware_updates
 disable_usb_controllers
-configure_clamav
+configure_clamd
 harden_malloc
 configure_anacron
 make_shell_files_immutable
