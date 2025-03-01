@@ -198,7 +198,7 @@ MAILTO=""
 30 5 monthly_maintenance  /bin/sh /etc/monthly
 EOF
 
-    CRON_TMP="/tmp/cron.$$"
+    CRON_TMP=$(mktemp)
     crontab -l > "$CRON_TMP" 2>/dev/null
     if ! grep -q "/usr/local/sbin/anacron -ds" "$CRON_TMP"; then
       print "@reboot /usr/local/sbin/anacron -ds" >> "$CRON_TMP"
