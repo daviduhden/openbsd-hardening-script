@@ -69,7 +69,6 @@ configure_user() {
     # Remove the user from the wheel group if present
     if grep '^wheel:' /etc/group | grep -w -q "${USER_TO_CONFIG}"; then
       print "Removing $USER_TO_CONFIG from the wheel group..."
-      cp /etc/group /etc/group.bak
       sed -i.bak -e "s/\b${USER_TO_CONFIG}\b//g" /etc/group  # Remove user from wheel group
     fi
 
