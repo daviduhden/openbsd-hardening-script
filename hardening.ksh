@@ -193,7 +193,6 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
 MAILTO=""
 
 1  5 daily_maintenance    /bin/sh /etc/daily
-1  15 daily_maintenance   /bin/sh /etc/daily.local
 7  5 weekly_maintenance   /bin/sh /etc/weekly
 30 5 monthly_maintenance  /bin/sh /etc/monthly
 EOF
