@@ -46,7 +46,7 @@ install_packages() {
   if confirm "Do you want to install necessary packages?"; then
     print "Installing necessary packages..."
     for pkg in anacron tor torsocks clamav; do
-      if ! pkg_info "$pkg" >/dev/null 2>&1; then
+      if ! pkg_info -e "$pkg" >/dev/null 2>&1; then
         print "Installing $pkg..."
         pkg_add "$pkg" || { print "Error installing $pkg"; exit 1; }  # Install package or exit on error
       else
