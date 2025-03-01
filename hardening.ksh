@@ -168,12 +168,13 @@ configure_clamd() {
     rcctl start clamd
     rcctl start freshclam
 
-    # Remove "Example" from ClamD and Freshclam configuration files
     CLAMD_CONF="/etc/clamd.conf"
     FRESHCLAM_CONF="/etc/freshclam.conf"
     if [ -f "$CLAMD_CONF" ]; then
       sed -i.bak '/^Example$/d' "$CLAMD_CONF"
       print "Removed 'Example' from $CLAMD_CONF"
+      sed -i '/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' "$CLAMD_CONF"
+      print "Uncommented 'LocalSocket /run/clamav/clamd.sock' in $CLAMD_CONF"
     fi
     if [ -f "$FRESHCLAM_CONF" ]; then
       sed -i.bak '/^Example$/d' "$FRESHCLAM_CONF"
