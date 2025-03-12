@@ -239,21 +239,64 @@ make_shell_files_immutable() {
   fi
 }
 
-# Main script execution
-check_root
-install_packages
-configure_user
-configure_firewall
-setup_tor
-configure_tor_mirror
-disable_firmware_updates
-disable_usb_controllers
-configure_clamd
-harden_malloc
-configure_anacron
-make_shell_files_immutable
+# Function to configure Xenocara
+configure_xenocara() {
+  # Configure Xenocara to use CWM instead of FVWM by default
+  if confirm "Do you want to configure Xenocara to use CWM instead of FVWM by default?"; then
+    print "Configuring Xenocara to use CWM instead of FVWM by default..."
+    XSESSION="/etc/X11/xenodm/Xsession"
+    if [ -f "$XSESSION" ]; then
+      sed -i.bak 's,exec fvwm,exec cwm,' "$XSESSION"  # Replace FVWM with CWM
+      print "Replaced 'exec fvwm' with 'exec cwm' in $XSESSION"
+      rcctl enable xenodm
+    fi
+  fi
 
-print "OpenBSD configuration completed."
+  # Fix screen tearing for Intel-based video chipsets
+  if confirm "Do you want to fix screen tearing for Intel-based video chipsets?"; then
+    print "Fixing screen tearing for Intel-based video chipsets..."
+    mkdir -p /etc/X11/xorg.conf.d
+    cat > /etc/X11/xorg.conf.d/intel.conf <<'EOF'
+Section "Device"
+  Identifier "drm"
+  Driver "intel"
+  Option "TearFree" "true"
+EndSection
+EOF
+    print "Created /etc/X11/xorg.conf.d/intel.conf with TearFree option enabled."
+  fi
+}
+
+# Function to prompt for system restart
+prompt_restart() {
+  print "OpenBSD configuration completed."
+  if confirm "Do you want to restart the system now?"; then
+    print "Rebooting the system..."
+    reboot
+  else
+    print "Please remember to reboot the system later to apply all changes."
+  fi
+}
+
+# Main script execution
+main() {
+  check_root
+  install_packages
+  configure_user
+  configure_firewall
+  setup_tor
+  configure_tor_mirror
+  disable_firmware_updates
+  disable_usb_controllers
+  configure_clamd
+  harden_malloc
+  configure_anacron
+  make_shell_files_immutable
+  configure_xenocara
+  prompt_restart
+}
+
+main
 
 #########################################################################
 # Explanation of Main Sections:
@@ -297,4 +340,7 @@ print "OpenBSD configuration completed."
 # 11. Shell Environment Files:
 #     - Makes shell environment files immutable using chflags.
 #
+# 12. Xenocara Configuration:
+#     - Configures Xenocara to use CWM instead of FVWM by default.
+#     - Fixes screen tearing for Intel-based video chipsets.
 #########################################################################

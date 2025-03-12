@@ -16,6 +16,7 @@ This script automates the hardening of an OpenBSD workstation based on various g
 - Applies system configuration changes for memory allocation hardening.
 - Sets up anacron for periodic tasks.
 - Makes shell environment files immutable using chflags.
+- Configures Xenocara to use CWM instead of FVWM by default and fixes screen tearing for Intel-based video chipsets.
 
 ## Requirements
 
