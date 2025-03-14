@@ -7,16 +7,16 @@ This script automates the hardening of an OpenBSD workstation based on various g
 ## Features
 
 - Installs essential packages: anacron, tor, torsocks, and clamav.
-- Configures user settings to enhance security.
-- Sets up a hardened firewall configuration.
+- Enhances user settings for improved security.
+- Configures a hardened firewall.
 - Enables the Tor service.
-- Configures the system to use a onion (Tor) mirror for updating the system and installing/updating packages.
-- Disables USB ports (Only use this if you have a PS/2 keyboard and mouse).
-- Enables the ClamAV antivirus services.
-- Applies system configuration changes for memory allocation hardening.
+- Uses an onion (Tor) mirror for system updates and package management.
+- Disables USB ports (ensure you have a PS/2 keyboard and mouse).
+- Activates ClamAV antivirus services.
+- Applies memory allocation hardening configurations.
 - Sets up anacron for periodic tasks.
-- Makes shell environment files immutable using chflags.
-- Configures Xenocara to use CWM instead of FVWM by default and fixes screen tearing for Intel-based video chipsets.
+- Makes shell environment files immutable with `chflags`.
+- Configures Xenocara to use CWM by default and fixes screen tearing for Intel video chipsets.
 
 ## Requirements
 
