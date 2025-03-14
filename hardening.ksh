@@ -98,6 +98,7 @@ block all
 pass out inet
 # Allow ICMP
 pass in proto icmp
+pass in on lo0
 EOF
     pfctl -f "$PF_CONF"  # Load new PF configuration
   fi
