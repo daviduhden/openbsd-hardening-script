@@ -96,7 +96,6 @@ configure_firewall() {
 # Custom PF configuration
 block all
 pass out inet
-# Allow ICMP
 pass in proto icmp
 pass in on lo0
 EOF
