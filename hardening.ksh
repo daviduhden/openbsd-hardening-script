@@ -94,9 +94,16 @@ configure_firewall() {
     [ -f "$PF_CONF" ] && cp "$PF_CONF" "${PF_CONF}.bak"  # Backup existing PF configuration
     cat > "$PF_CONF" <<'EOF'
 # Custom PF configuration
+# Block all traffic by default
 block all
+
+# Allow all outgoing traffic
 pass out inet
+
+# Allow incoming ICMP traffic (e.g., ping)
 pass in proto icmp
+
+# Allow all traffic on the loopback interface
 pass in on lo0
 EOF
     pfctl -f "$PF_CONF"  # Load new PF configuration
