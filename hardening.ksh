@@ -4,7 +4,7 @@
 # OpenBSD hardening script
 # This script automates various security hardening tasks on an OpenBSD system.
 # It includes functions for logging, user prompts, package installation,
-# user configuration, firewall setup, Tor configuration, antivirus setup,
+# user configuration, firewall setup, Tor/I2P configuration, antivirus setup,
 # system hardening, and more.
 #
 # See the LICENSE file at the top of the project tree for copyright
@@ -26,6 +26,8 @@ fi
 log() { print "$(date '+%Y-%m-%d %H:%M:%S') ${GREEN}[INFO]${RESET} ✅ $*"; }
 warn() { print "$(date '+%Y-%m-%d %H:%M:%S') ${YELLOW}[WARN]${RESET} ⚠️ $*" >&2; }
 error() { print "$(date '+%Y-%m-%d %H:%M:%S') ${RED}[ERROR]${RESET} ❌ $*" >&2; }
+
+TRANSPORT="none"
 
 # Function to prompt the user for confirmation
 confirm() {
@@ -52,7 +54,13 @@ check_root() {
 install_packages() {
 	if confirm "Do you want to install necessary packages?"; then
 		log "Installing necessary packages..."
-		for pkg in anacron tor torsocks clamav; do
+		pkgs="anacron clamav"
+		if [ "$TRANSPORT" = "tor" ]; then
+			pkgs="$pkgs tor torsocks"
+		elif [ "$TRANSPORT" = "i2p" ]; then
+			pkgs="$pkgs i2pd"
+		fi
+		for pkg in $pkgs; do
 			if ! pkg_info -e "$pkg" >/dev/null 2>&1; then
 				log "Installing $pkg..."
 				pkg_add "$pkg" || {
@@ -64,6 +72,32 @@ install_packages() {
 			fi
 		done
 	fi
+}
+
+# Function to select Tor or I2P (not both)
+select_transport() {
+	log "Select a transport for updates (Tor or I2P). Only one can be configured."
+	while true; do
+		print -n "Choose transport [tor/i2p/none]: "
+		read -r choice
+		case "$choice" in
+		tor | TOR)
+			TRANSPORT="tor"
+			return 0
+			;;
+		i2p | I2P)
+			TRANSPORT="i2p"
+			return 0
+			;;
+		none | NONE | "")
+			TRANSPORT="none"
+			return 0
+			;;
+		*)
+			print "Please answer: tor, i2p, or none."
+			;;
+		esac
+	done
 }
 
 # Function to configure user settings
@@ -125,7 +159,7 @@ EOF
 
 # Function to setup Tor service
 setup_tor() {
-	if confirm "Do you want to enable and start the Tor service?"; then
+	if [ "$TRANSPORT" = "tor" ] && confirm "Do you want to enable and start the Tor service?"; then
 		log "Enabling and starting Tor..."
 		rcctl enable tor
 		rcctl start tor
@@ -134,7 +168,7 @@ setup_tor() {
 
 # Function to configure mirror over Tor
 configure_tor_mirror() {
-	if confirm "Do you want to configure the system to use an onion (Tor) mirror for updating the system and installing/updating packages?"; then
+	if [ "$TRANSPORT" = "tor" ] && confirm "Do you want to configure the system to use an onion (Tor) mirror for updating the system and installing/updating packages?"; then
 		log "Configuring /etc/installurl for Tor mirror..."
 		INSTALLURL_FILE="/etc/installurl"
 		print "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/pub/OpenBSD/" >"$INSTALLURL_FILE"
@@ -154,6 +188,52 @@ configure_tor_mirror() {
 				sed -i.bak 's,ftp -N,/usr/local/bin/torsocks &,' "/usr/sbin/$bin" 2>/dev/null # Patch binaries to use torsocks
 			fi
 		done
+		warn "Recommended fw_update over Tor:"
+		warn "  torsocks fw_update -p http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/firmware/$(uname -r)/"
+		warn "  torsocks fw_update -p http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/firmware/snapshots/"
+	fi
+}
+
+# Function to setup I2P service
+setup_i2p() {
+	if [ "$TRANSPORT" = "i2p" ] && confirm "Do you want to enable and start the I2P (i2pd) service?"; then
+		log "Enabling and starting i2pd..."
+		rcctl enable i2pd
+		rcctl start i2pd
+	fi
+}
+
+# Function to configure mirror over I2P
+configure_i2p_mirror() {
+	if [ "$TRANSPORT" = "i2p" ] && confirm "Do you want to configure the system to use an I2P mirror for updates and packages?"; then
+		log "Configuring /etc/i2pd/tunnels.conf for I2P mirror..."
+		TUNNELS_CONF="/etc/i2pd/tunnels.conf"
+		[ -f "$TUNNELS_CONF" ] && cp "$TUNNELS_CONF" "${TUNNELS_CONF}.bak"
+		cat >"$TUNNELS_CONF" <<'EOF'
+[MIRROR]
+type = client
+address = 127.0.0.1
+port = 8080
+destination = 2st32tfsqjnvnmnmy3e5o5y5hphtgt4b2letuebyv75ohn2w5umq.b32.i2p
+destinationport = 8081
+keys = mirror.dat
+EOF
+
+		log "Configuring /etc/installurl for I2P mirror..."
+		INSTALLURL_FILE="/etc/installurl"
+		print "http://127.0.0.1:8080/pub/OpenBSD/" >"$INSTALLURL_FILE"
+
+		if ! grep -q "firmware.openbsd.org" /etc/hosts; then
+			log "Adding firmware.openbsd.org entry to /etc/hosts..."
+			print "127.0.0.9 firmware.openbsd.org" >>/etc/hosts
+		fi
+
+		log "Restarting i2pd to apply tunnel configuration..."
+		rcctl restart i2pd
+
+		warn "Recommended fw_update over I2P:"
+		warn "  fw_update -p http://127.0.0.1:8080/firmware/$(uname -r)/"
+		warn "  fw_update -p http://127.0.0.1:8080/firmware/snapshots/"
 	fi
 }
 
@@ -351,11 +431,14 @@ prompt_restart() {
 # Main script execution
 main() {
 	check_root
+	select_transport
 	install_packages
 	configure_user
 	configure_firewall
 	setup_tor
 	configure_tor_mirror
+	setup_i2p
+	configure_i2p_mirror
 	disable_firmware_updates
 	disable_usb_controllers
 	configure_clamd
