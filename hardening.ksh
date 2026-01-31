@@ -195,10 +195,60 @@ configure_clamd() {
 			log "Removed 'Example' from $CLAMD_CONF"
 			sed -i '/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' "$CLAMD_CONF" # Uncomment LocalSocket line
 			log "Uncommented 'LocalSocket /run/clamav/clamd.sock' in $CLAMD_CONF"
+			if ! grep -q '^OnAccessIncludePath /home' "$CLAMD_CONF"; then
+				cat >>"$CLAMD_CONF" <<'EOF'
+# On-access scan configuration
+OnAccessIncludePath /home
+OnAccessExcludeRootUID yes
+OnAccessPrevention yes
+EOF
+				log "Configured on-access scanning for /home in $CLAMD_CONF"
+			fi
 		fi
 		if [ -f "$FRESHCLAM_CONF" ]; then
 			sed -i.bak '/^Example$/d' "$FRESHCLAM_CONF" # Remove 'Example' line
 			log "Removed 'Example' from $FRESHCLAM_CONF"
+		fi
+
+		if command -v clamonacc >/dev/null 2>&1; then
+			rcctl enable clamonacc
+			rcctl start clamonacc
+			log "Enabled clamonacc for on-access scanning"
+		else
+			warn "clamonacc not available; on-access scanning may not be active"
+		fi
+	fi
+}
+
+# Function to enforce W^X on all filesystems
+enforce_wx() {
+	if confirm "Do you want to enforce W^X on all filesystems?"; then
+		log "Enforcing W^X..."
+		SYSCTL_CONF="/etc/sysctl.conf"
+		grep -q '^kern.wxallowed=0' "$SYSCTL_CONF" 2>/dev/null || print "kern.wxallowed=0" >>"$SYSCTL_CONF"
+		sysctl kern.wxallowed=0
+
+		FSTAB="/etc/fstab"
+		if [ -f "$FSTAB" ]; then
+			cp "$FSTAB" "${FSTAB}.bak"
+			awk '
+			/^[[:space:]]*#/ {print; next}
+			NF >= 4 {
+				opts = $4
+				n = split(opts, a, ",")
+				out = ""
+				for (i = 1; i <= n; i++) {
+					if (a[i] != "wxallowed" && a[i] != "") {
+						out = (out == "" ? a[i] : out "," a[i])
+					}
+				}
+				if (out == "") out = "rw"
+				$4 = out
+			}
+			{print}
+			' "${FSTAB}.bak" >"$FSTAB"
+			log "Removed wxallowed from $FSTAB"
+			mount -a || warn "Could not remount all filesystems; reboot recommended"
 		fi
 	fi
 }
@@ -246,11 +296,11 @@ EOF
 	fi
 }
 
-# Function to make shell environment files immutable
+# Function to make environment files immutable
 make_shell_files_immutable() {
-	if confirm "Do you want to make shell environment files immutable?"; then
-		log "Making shell environment files immutable..."
-		for file in /etc/profile /etc/csh.cshrc /etc/ksh.kshrc; do
+	if confirm "Do you want to make environment files immutable?"; then
+		log "Making environment files immutable..."
+		for file in /etc/profile /etc/csh.cshrc /etc/csh.login /etc/csh.logout /etc/ksh.kshrc /etc/login.conf /etc/login.conf.db; do
 			if [ -f "$file" ]; then
 				chflags schg "$file" # Set schg flag to make the file immutable
 				log "Set schg flag on $file"
@@ -309,6 +359,7 @@ main() {
 	disable_firmware_updates
 	disable_usb_controllers
 	configure_clamd
+	enforce_wx
 	harden_malloc
 	configure_anacron
 	make_shell_files_immutable
