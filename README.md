@@ -18,7 +18,7 @@ This script automates the hardening of an OpenBSD workstation based on various g
 - Enforces W^X on all filesystems.
 - Sets up anacron for periodic tasks.
 - Makes shell environment files immutable with `chflags`.
-- Configures Xenocara to use CWM by default and fixes screen tearing for Intel video chipsets.
+- Configures Xenocara to use CWM by default, disables X11 magic keystrokes that can bypass screen locks, and fixes screen tearing for Intel video chipsets.
 
 ## Requirements
 

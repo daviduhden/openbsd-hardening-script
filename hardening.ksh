@@ -402,6 +402,24 @@ configure_xenocara() {
 		fi
 	fi
 
+	# Disable X11 keyboard shortcuts that can bypass screen locks
+	if confirm "Do you want to disable X11 magic keystrokes that can bypass screen locks?"; then
+		log "Disabling X11 magic keystrokes..."
+		XORG_CONF_DIR="/usr/X11R6/share/X11/xorg.conf.d"
+		SERVER_FLAGS_CONF="$XORG_CONF_DIR/serverflags.conf"
+		mkdir -p "$XORG_CONF_DIR"
+		cat >"$SERVER_FLAGS_CONF" <<EOF
+Section "Server Flags"
+  Option "DontZap" "true"
+  Option "DontVTSwitch" "true"
+  Option "AllowClosedownGrabs" "false"
+EndSection
+EOF
+		chown root:bin "$SERVER_FLAGS_CONF"
+		chmod 644 "$SERVER_FLAGS_CONF"
+		log "Created $SERVER_FLAGS_CONF with magic keystrokes disabled."
+	fi
+
 	# Fix screen tearing for Intel-based video chipsets
 	if confirm "Do you want to fix screen tearing for Intel-based video chipsets?"; then
 		log "Fixing screen tearing for Intel-based video chipsets..."
