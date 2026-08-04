@@ -1,15 +1,16 @@
 #!/bin/ksh
 
-##########################################################################
+######################################################################
 # OpenBSD hardening script
-# This script automates various security hardening tasks on an OpenBSD system.
-# It includes functions for logging, user questions, package installation,
-# user configuration, firewall setup, Tor/I2P configuration, antivirus setup,
-# system hardening, and more.
+# This script automates various security hardening tasks on an
+# OpenBSD system.
+# It includes functions for logging, user questions, package
+# installation, user configuration, firewall setup, Tor/I2P
+# configuration, antivirus setup, system hardening, and more.
 #
 # See the LICENSE file at the top of the project tree for copyright
 # and license details.
-##########################################################################
+######################################################################
 
 if [ -t 1 ] && [ "${NO_COLOR:-}" != "1" ]; then
 	GREEN="\033[32m"
@@ -23,9 +24,18 @@ else
 	RESET=""
 fi
 
-log() { print "$(date '+%Y-%m-%d %H:%M:%S') ${GREEN}[INFO]${RESET} ✅ $*"; }
-warn() { print "$(date '+%Y-%m-%d %H:%M:%S') ${YELLOW}[WARN]${RESET} ⚠️ $*" >&2; }
-error() { print "$(date '+%Y-%m-%d %H:%M:%S') ${RED}[ERROR]${RESET} ❌ $*" >&2; }
+log() {
+	print "$(date '+%Y-%m-%d %H:%M:%S')" \
+		"${GREEN}[INFO]${RESET}  [OK] $*"
+}
+warn() {
+	print "$(date '+%Y-%m-%d %H:%M:%S')" \
+		"${YELLOW}[WARN]${RESET}  [WARN] $*" >&2
+}
+error() {
+	print "$(date '+%Y-%m-%d %H:%M:%S')" \
+		"${RED}[ERROR]${RESET} [ERROR] $*" >&2
+}
 
 TRANSPORT="none"
 
@@ -76,7 +86,8 @@ install_packages() {
 
 # Function to select Tor or I2P (not both)
 select_transport() {
-	log "Select a transport for updates (Tor or I2P). Only one can be configured."
+	log "Select a transport for updates (Tor or I2P)." \
+	    "Only one can be configured."
 	while true; do
 		print -n "Choose transport [tor/i2p/none]: "
 		read -r choice
@@ -104,23 +115,30 @@ select_transport() {
 configure_user() {
 	if confirm "Do you want to configure the user settings?"; then
 		USER_TO_CONFIG="user"
-		PASSWORD=$(openssl rand -base64 12)                 # Generate a random password
-		ENCRYPTED_PASSWORD=$(openssl passwd -1 "$PASSWORD") # Encrypt the password
-		useradd -m -s /bin/ksh ${USER_TO_CONFIG}            # Create the user with a home directory and ksh shell
-		usermod -p "$ENCRYPTED_PASSWORD" "$USER_TO_CONFIG"  # Set the encrypted password for the user
+		# Generate a random password
+		PASSWORD=$(openssl rand -base64 12)
+		# Encrypt the password
+		ENCRYPTED_PASSWORD=$(openssl passwd -1 "$PASSWORD")
+		# Create the user with a home directory and ksh shell
+		useradd -m -s /bin/ksh ${USER_TO_CONFIG}
+		# Set the encrypted password for the user
+		usermod -p "$ENCRYPTED_PASSWORD" "$USER_TO_CONFIG"
 		log "User 'user' created with password: $PASSWORD"
 
 		# Remove the user from the wheel group if present
 		if grep '^wheel:' /etc/group | grep -w -q "${USER_TO_CONFIG}"; then
 			log "Removing $USER_TO_CONFIG from the wheel group..."
-			sed -i.bak -e "s/\b${USER_TO_CONFIG}\b//g" /etc/group # Remove user from wheel group
+			# Remove user from wheel group
+			sed -i.bak -e "s/\b${USER_TO_CONFIG}\b//g" \
+				/etc/group
 		fi
 
 		HOME_DIR="/home/${USER_TO_CONFIG}"
 		if [ -d "$HOME_DIR" ]; then
 			log "Setting permissions on $HOME_DIR..."
 			chown ${USER_TO_CONFIG}:${USER_TO_CONFIG} "$HOME_DIR" # Set ownership
-			chmod 700 "$HOME_DIR"                                 # Set permissions
+			# Set permissions
+			chmod 700 "$HOME_DIR"
 			if [ -f "$HOME_DIR/.profile" ]; then
 				if ! grep -Fq "umask 077" "$HOME_DIR/.profile"; then
 					log "Adding umask 077 to $HOME_DIR/.profile"
@@ -138,7 +156,9 @@ configure_firewall() {
 	if confirm "Do you want to configure the firewall?"; then
 		log "Configuring PF..."
 		PF_CONF="/etc/pf.conf"
-		[ -f "$PF_CONF" ] && cp "$PF_CONF" "${PF_CONF}.bak" # Backup existing PF configuration
+		# Backup existing PF configuration
+		[ -f "$PF_CONF" ] && \
+			cp "$PF_CONF" "${PF_CONF}.bak"
 		cat >"$PF_CONF" <<'EOF'
 # Custom PF configuration
 # Block all traffic by default
@@ -159,7 +179,9 @@ EOF
 
 # Function to setup Tor service
 setup_tor() {
-	if [ "$TRANSPORT" = "tor" ] && confirm "Do you want to enable and start the Tor service?"; then
+	if [ "$TRANSPORT" = "tor" ] && \
+	    confirm "Do you want to enable and start the Tor service?"; \
+	then
 		log "Enabling and starting Tor..."
 		rcctl enable tor
 		rcctl start tor
@@ -168,15 +190,26 @@ setup_tor() {
 
 # Function to configure mirror over Tor
 configure_tor_mirror() {
-	if [ "$TRANSPORT" = "tor" ] && confirm "Do you want to configure the system to use an onion (Tor) mirror for updating the system and installing/updating packages?"; then
+	if [ "$TRANSPORT" = "tor" ] && \
+	    confirm "Do you want to configure the system to use an" \
+	        "onion (Tor) mirror for updating the system and" \
+	        "installing/updating packages?"; then
 		log "Configuring /etc/installurl for Tor mirror..."
 		INSTALLURL_FILE="/etc/installurl"
-		print "http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/pub/OpenBSD/" >"$INSTALLURL_FILE"
+		_onion="http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzef"
+		_onion="${_onion}kpozp7kjeugtpnrixldxqd.onion"
+		_onion="${_onion}/pub/OpenBSD/"
+		print "$_onion" >"$INSTALLURL_FILE"
 
 		LOGIN_CONF_FILE="/etc/login.conf"
 		if ! grep -q "setenv=FETCH_CMD" "$LOGIN_CONF_FILE"; then
 			print "default:" >>"$LOGIN_CONF_FILE"
-			print "    :setenv=FETCH_CMD=/usr/local/bin/curl -L -s -q -N -x socks5h://127.0.0.1:9050:" >>"$LOGIN_CONF_FILE"
+			_fetch="    :setenv=FETCH_CMD="
+			_fetch="${_fetch}/usr/local/bin/curl"
+			_fetch="${_fetch} -L -s -q -N"
+			_fetch="${_fetch} -x socks5h://127.0.0.1:9050:"
+			print "$_fetch" \
+				>>"$LOGIN_CONF_FILE"
 		fi
 
 		log "Rebuilding login.conf database..."
@@ -185,18 +218,30 @@ configure_tor_mirror() {
 		log "Patching sysupgrade and syspatch to use torsocks..."
 		for bin in sysupgrade syspatch; do
 			if [ -f "/usr/sbin/$bin" ]; then
-				sed -i.bak 's,ftp -N,/usr/local/bin/torsocks &,' "/usr/sbin/$bin" 2>/dev/null # Patch binaries to use torsocks
+				# Patch binaries to use torsocks
+				sed -i.bak \
+					's,ftp -N,/usr/local/bin/torsocks &,' \
+					"/usr/sbin/$bin" 2>/dev/null
 			fi
 		done
-		warn "Recommended fw_update over Tor:"
-		warn "  torsocks fw_update -p http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/firmware/$(uname -r)/"
-		warn "  torsocks fw_update -p http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzefkpozp7kjeugtpnrixldxqd.onion/firmware/snapshots/"
+		_fw1="  torsocks fw_update -p"
+		_fw1="${_fw1} http://kdzlr6wcf5d23chfdwvfwuzm6"
+		_fw1="${_fw1}rstbpzzefkpozp7kjeugtpnrixldxqd"
+		_fw1="${_fw1}.onion/firmware/$(uname -r)/"
+		warn "$_fw1"
+		_fw2="  torsocks fw_update -p"
+		_fw2="${_fw2} http://kdzlr6wcf5d23chfdwvfwuzm6"
+		_fw2="${_fw2}rstbpzzefkpozp7kjeugtpnrixldxqd"
+		_fw2="${_fw2}.onion/firmware/snapshots/"
+		warn "$_fw2"
 	fi
 }
 
 # Function to setup I2P service
 setup_i2p() {
-	if [ "$TRANSPORT" = "i2p" ] && confirm "Do you want to enable and start the I2P (i2pd) service?"; then
+	if [ "$TRANSPORT" = "i2p" ] && \
+	    confirm "Do you want to enable and start the I2P (i2pd)\
+service?"; then
 		log "Enabling and starting i2pd..."
 		rcctl enable i2pd
 		rcctl start i2pd
@@ -205,7 +250,9 @@ setup_i2p() {
 
 # Function to configure mirror over I2P
 configure_i2p_mirror() {
-	if [ "$TRANSPORT" = "i2p" ] && confirm "Do you want to configure the system to use an I2P mirror for updates and packages?"; then
+	if [ "$TRANSPORT" = "i2p" ] && \
+	    confirm "Do you want to configure the system to use an\
+ I2P mirror for updates and packages?"; then
 		log "Configuring /etc/i2pd/tunnels.conf for I2P mirror..."
 		TUNNELS_CONF="/etc/i2pd/tunnels.conf"
 		[ -f "$TUNNELS_CONF" ] && cp "$TUNNELS_CONF" "${TUNNELS_CONF}.bak"
@@ -243,7 +290,9 @@ disable_firmware_updates() {
 		log "Configuring firmware mirror..."
 		if ! grep -q "firmware.openbsd.org" /etc/hosts; then
 			log "Adding firmware.openbsd.org entry to /etc/hosts..."
-			print "127.0.0.9 firmware.openbsd.org" >>/etc/hosts # Add entry to /etc/hosts
+			# Add entry to /etc/hosts
+			print "127.0.0.9 firmware.openbsd.org" \
+				>>/etc/hosts
 		fi
 	fi
 }
@@ -273,7 +322,10 @@ configure_clamd() {
 		if [ -f "$CLAMD_CONF" ]; then
 			sed -i.bak '/^Example$/d' "$CLAMD_CONF" # Remove 'Example' line
 			log "Removed 'Example' from $CLAMD_CONF"
-			sed -i '/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' "$CLAMD_CONF" # Uncomment LocalSocket line
+			# Uncomment LocalSocket line
+			sed -i \
+			  '/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' \
+			  "$CLAMD_CONF"
 			log "Uncommented 'LocalSocket /run/clamav/clamd.sock' in $CLAMD_CONF"
 			if ! grep -q '^OnAccessIncludePath /home' "$CLAMD_CONF"; then
 				cat >>"$CLAMD_CONF" <<'EOF'
@@ -305,7 +357,9 @@ enforce_wx() {
 	if confirm "Do you want to enforce W^X on all filesystems?"; then
 		log "Enforcing W^X..."
 		SYSCTL_CONF="/etc/sysctl.conf"
-		grep -q '^kern.wxallowed=0' "$SYSCTL_CONF" 2>/dev/null || print "kern.wxallowed=0" >>"$SYSCTL_CONF"
+		grep -q '^kern.wxallowed=0' "$SYSCTL_CONF" \
+			2>/dev/null || \
+			print "kern.wxallowed=0" >>"$SYSCTL_CONF"
 		sysctl kern.wxallowed=0
 
 		FSTAB="/etc/fstab"
@@ -328,18 +382,26 @@ enforce_wx() {
 			{print}
 			' "${FSTAB}.bak" >"$FSTAB"
 			log "Removed wxallowed from $FSTAB"
-			mount -a || warn "Could not remount all filesystems; reboot recommended"
+			mount -a || warn "Could not remount all" \
+				"filesystems; reboot recommended"
 		fi
 	fi
 }
 
-# Function to apply system configuration changes for memory allocation hardening
+# Function to apply system configuration changes for memory
+# allocation hardening
 harden_malloc() {
-	if confirm "Do you want to apply system configuration changes for memory allocation hardening?"; then
+	if confirm "Do you want to apply system configuration\
+ changes for memory allocation hardening?"; then
 		log "Applying vm.malloc_conf=S..."
 		SYSCTL_CONF="/etc/sysctl.conf"
-		grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" 2>/dev/null || print "vm.malloc_conf=S" >>"$SYSCTL_CONF" # Add setting to sysctl.conf
-		sysctl vm.malloc_conf=S                                                                             # Apply setting immediately
+		# Add setting to sysctl.conf
+		grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" \
+			2>/dev/null || \
+			print "vm.malloc_conf=S" \
+				>>"$SYSCTL_CONF"
+		# Apply setting immediately
+		sysctl vm.malloc_conf=S
 	fi
 }
 
@@ -380,7 +442,10 @@ EOF
 make_shell_files_immutable() {
 	if confirm "Do you want to make environment files immutable?"; then
 		log "Making environment files immutable..."
-		for file in /etc/profile /etc/csh.cshrc /etc/csh.login /etc/csh.logout /etc/ksh.kshrc /etc/login.conf /etc/login.conf.db; do
+		for file in /etc/profile /etc/csh.cshrc \
+			/etc/csh.login /etc/csh.logout \
+			/etc/ksh.kshrc /etc/login.conf \
+			/etc/login.conf.db; do
 			if [ -f "$file" ]; then
 				chflags schg "$file" # Set schg flag to make the file immutable
 				log "Set schg flag on $file"
@@ -392,18 +457,22 @@ make_shell_files_immutable() {
 # Function to configure Xenocara
 configure_xenocara() {
 	# Configure Xenocara to use CWM instead of FVWM by default
-	if confirm "Do you want to configure Xenocara to use CWM instead of FVWM by default?"; then
+	if confirm "Do you want to configure Xenocara to use CWM\
+ instead of FVWM by default?"; then
 		log "Configuring Xenocara to use CWM instead of FVWM by default..."
 		XSESSION="/etc/X11/xenodm/Xsession"
 		if [ -f "$XSESSION" ]; then
-			sed -i.bak 's,exec fvwm,exec cwm,' "$XSESSION" # Replace FVWM with CWM
+			# Replace FVWM with CWM
+			sed -i.bak 's,exec fvwm,exec cwm,' \
+				"$XSESSION"
 			log "Replaced 'exec fvwm' with 'exec cwm' in $XSESSION"
 			rcctl enable xenodm
 		fi
 	fi
 
 	# Disable X11 keyboard shortcuts that can bypass screen locks
-	if confirm "Do you want to disable X11 magic keystrokes that can bypass screen locks?"; then
+	if confirm "Do you want to disable X11 magic keystrokes\
+ that can bypass screen locks?"; then
 		log "Disabling X11 magic keystrokes..."
 		XORG_CONF_DIR="/usr/X11R6/share/X11/xorg.conf.d"
 		SERVER_FLAGS_CONF="$XORG_CONF_DIR/serverflags.conf"
@@ -421,7 +490,8 @@ EOF
 	fi
 
 	# Fix screen tearing for Intel-based video chipsets
-	if confirm "Do you want to fix screen tearing for Intel-based video chipsets?"; then
+	if confirm "Do you want to fix screen tearing for Intel-\
+based video chipsets?"; then
 		log "Fixing screen tearing for Intel-based video chipsets..."
 		mkdir -p /etc/X11/xorg.conf.d
 		cat >/etc/X11/xorg.conf.d/intel.conf <<'EOF'
@@ -431,7 +501,8 @@ Section "Device"
   Option "TearFree" "true"
 EndSection
 EOF
-		log "Created /etc/X11/xorg.conf.d/intel.conf with TearFree option enabled."
+		log "Created /etc/X11/xorg.conf.d/intel.conf" \
+			"with TearFree option enabled."
 	fi
 }
 
@@ -442,7 +513,8 @@ question_restart() {
 		log "Rebooting the system..."
 		reboot
 	else
-		warn "Please remember to reboot the system later to apply all changes."
+		warn "Please remember to reboot the system later" \
+			"to apply all changes."
 	fi
 }
 
