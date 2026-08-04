@@ -87,7 +87,7 @@ install_packages() {
 # Function to select Tor or I2P (not both)
 select_transport() {
 	log "Select a transport for updates (Tor or I2P)." \
-	    "Only one can be configured."
+		"Only one can be configured."
 	while true; do
 		print -n "Choose transport [tor/i2p/none]: "
 		read -r choice
@@ -157,7 +157,7 @@ configure_firewall() {
 		log "Configuring PF..."
 		PF_CONF="/etc/pf.conf"
 		# Backup existing PF configuration
-		[ -f "$PF_CONF" ] && \
+		[ -f "$PF_CONF" ] &&
 			cp "$PF_CONF" "${PF_CONF}.bak"
 		cat >"$PF_CONF" <<'EOF'
 # Custom PF configuration
@@ -179,9 +179,8 @@ EOF
 
 # Function to setup Tor service
 setup_tor() {
-	if [ "$TRANSPORT" = "tor" ] && \
-	    confirm "Do you want to enable and start the Tor service?"; \
-	then
+	if [ "$TRANSPORT" = "tor" ] &&
+		confirm "Do you want to enable and start the Tor service?"; then
 		log "Enabling and starting Tor..."
 		rcctl enable tor
 		rcctl start tor
@@ -190,10 +189,10 @@ setup_tor() {
 
 # Function to configure mirror over Tor
 configure_tor_mirror() {
-	if [ "$TRANSPORT" = "tor" ] && \
-	    confirm "Do you want to configure the system to use an" \
-	        "onion (Tor) mirror for updating the system and" \
-	        "installing/updating packages?"; then
+	if [ "$TRANSPORT" = "tor" ] &&
+		confirm "Do you want to configure the system to use an" \
+			"onion (Tor) mirror for updating the system and" \
+			"installing/updating packages?"; then
 		log "Configuring /etc/installurl for Tor mirror..."
 		INSTALLURL_FILE="/etc/installurl"
 		_onion="http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzef"
@@ -239,8 +238,8 @@ configure_tor_mirror() {
 
 # Function to setup I2P service
 setup_i2p() {
-	if [ "$TRANSPORT" = "i2p" ] && \
-	    confirm "Do you want to enable and start the I2P (i2pd)\
+	if [ "$TRANSPORT" = "i2p" ] &&
+		confirm "Do you want to enable and start the I2P (i2pd)\
 service?"; then
 		log "Enabling and starting i2pd..."
 		rcctl enable i2pd
@@ -250,8 +249,8 @@ service?"; then
 
 # Function to configure mirror over I2P
 configure_i2p_mirror() {
-	if [ "$TRANSPORT" = "i2p" ] && \
-	    confirm "Do you want to configure the system to use an\
+	if [ "$TRANSPORT" = "i2p" ] &&
+		confirm "Do you want to configure the system to use an\
  I2P mirror for updates and packages?"; then
 		log "Configuring /etc/i2pd/tunnels.conf for I2P mirror..."
 		TUNNELS_CONF="/etc/i2pd/tunnels.conf"
@@ -324,8 +323,8 @@ configure_clamd() {
 			log "Removed 'Example' from $CLAMD_CONF"
 			# Uncomment LocalSocket line
 			sed -i \
-			  '/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' \
-			  "$CLAMD_CONF"
+				'/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' \
+				"$CLAMD_CONF"
 			log "Uncommented 'LocalSocket /run/clamav/clamd.sock' in $CLAMD_CONF"
 			if ! grep -q '^OnAccessIncludePath /home' "$CLAMD_CONF"; then
 				cat >>"$CLAMD_CONF" <<'EOF'
@@ -358,7 +357,7 @@ enforce_wx() {
 		log "Enforcing W^X..."
 		SYSCTL_CONF="/etc/sysctl.conf"
 		grep -q '^kern.wxallowed=0' "$SYSCTL_CONF" \
-			2>/dev/null || \
+			2>/dev/null ||
 			print "kern.wxallowed=0" >>"$SYSCTL_CONF"
 		sysctl kern.wxallowed=0
 
@@ -397,7 +396,7 @@ harden_malloc() {
 		SYSCTL_CONF="/etc/sysctl.conf"
 		# Add setting to sysctl.conf
 		grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" \
-			2>/dev/null || \
+			2>/dev/null ||
 			print "vm.malloc_conf=S" \
 				>>"$SYSCTL_CONF"
 		# Apply setting immediately
