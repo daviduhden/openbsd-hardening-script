@@ -1,18 +1,13 @@
 #!/bin/ksh
 
-######################################################################
-# OpenBSD hardening script
-# This script automates various security hardening tasks on an
-# OpenBSD system.
-# It includes functions for logging, user questions, package
-# installation, user configuration, firewall setup, Tor/I2P
-# configuration, antivirus setup, system hardening, and more.
-#
-# See the LICENSE file at the top of the project tree for copyright
-# and license details.
-######################################################################
+# Interactive, conservative hardening helpers for OpenBSD workstations.
+# See LICENSE for copyright and licence details.
 
-if [ -t 1 ] && [ "${NO_COLOR:-}" != "1" ]; then
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+export PATH
+umask 077
+
+if [ -t 1 ] && [ "${NO_COLOR:-}" != 1 ]; then
 	GREEN="\033[32m"
 	YELLOW="\033[33m"
 	RED="\033[31m"
@@ -24,519 +19,295 @@ else
 	RESET=""
 fi
 
-log() {
-	print "$(date '+%Y-%m-%d %H:%M:%S')" \
-		"${GREEN}[INFO]${RESET}  [OK] $*"
-}
-warn() {
-	print "$(date '+%Y-%m-%d %H:%M:%S')" \
-		"${YELLOW}[WARN]${RESET}  [WARN] $*" >&2
-}
-error() {
-	print "$(date '+%Y-%m-%d %H:%M:%S')" \
-		"${RED}[ERROR]${RESET} [ERROR] $*" >&2
-}
+log() { print "${GREEN}[INFO]${RESET} $*"; }
+warn() { print "${YELLOW}[WARN]${RESET} $*" >&2; }
+error() { print "${RED}[ERROR]${RESET} $*" >&2; }
 
-TRANSPORT="none"
+REBOOT_NEEDED=0
+BACKUP_PATH=""
 
-# Function to question the user for confirmation
 confirm() {
-	while true; do
-		print -n "$1 [y/n]: "
-		read -r yn
-		case "$yn" in
-		[Yy]*) return 0 ;;                     # User confirmed with 'yes'
-		[Nn]*) return 1 ;;                     # User declined with 'no'
-		*) print "Please answer yes or no." ;; # Invalid input, question again
-		esac
-	done
+	print "$1 [y/N]: \c"
+	read -r answer
+	case "$answer" in
+	[yY] | [yY][eE][sS]) return 0 ;;
+	*) return 1 ;;
+	esac
 }
 
-# Function to check for root privileges
 check_root() {
 	if [ "$(id -u)" -ne 0 ]; then
 		error "This script must be run as root."
-		exit 1 # Exit if not running as root
+		exit 1
 	fi
 }
 
-# Function to install necessary packages
-install_packages() {
-	if confirm "Do you want to install necessary packages?"; then
-		log "Installing necessary packages..."
-		pkgs="anacron clamav"
-		if [ "$TRANSPORT" = "tor" ]; then
-			pkgs="$pkgs tor torsocks"
-		elif [ "$TRANSPORT" = "i2p" ]; then
-			pkgs="$pkgs i2pd"
-		fi
-		for pkg in $pkgs; do
-			if ! pkg_info -e "$pkg" >/dev/null 2>&1; then
-				log "Installing $pkg..."
-				pkg_add "$pkg" || {
-					error "Error installing $pkg"
-					exit 1
-				} # Install package or exit on error
-			else
-				log "$pkg is already installed."
-			fi
-		done
+backup_file() {
+	typeset file=$1
+	BACKUP_PATH=""
+	[ -f "$file" ] || return 0
+	BACKUP_PATH=$(mktemp "${file}.hardening.XXXXXX") || return 1
+	if ! cp -p "$file" "$BACKUP_PATH"; then
+		rm -f "$BACKUP_PATH"
+		BACKUP_PATH=""
+		return 1
 	fi
+	log "Backup: $BACKUP_PATH"
 }
 
-# Function to select Tor or I2P (not both)
-select_transport() {
-	log "Select a transport for updates (Tor or I2P)." \
-		"Only one can be configured."
-	while true; do
-		print -n "Choose transport [tor/i2p/none]: "
-		read -r choice
-		case "$choice" in
-		tor | TOR)
-			TRANSPORT="tor"
-			return 0
-			;;
-		i2p | I2P)
-			TRANSPORT="i2p"
-			return 0
-			;;
-		none | NONE | "")
-			TRANSPORT="none"
-			return 0
-			;;
-		*)
-			print "Please answer: tor, i2p, or none."
-			;;
-		esac
-	done
-}
-
-# Function to configure user settings
-configure_user() {
-	if confirm "Do you want to configure the user settings?"; then
-		USER_TO_CONFIG="user"
-		# Generate a random password
-		PASSWORD=$(openssl rand -base64 12)
-		# Encrypt the password
-		ENCRYPTED_PASSWORD=$(openssl passwd -1 "$PASSWORD")
-		# Create the user with a home directory and ksh shell
-		useradd -m -s /bin/ksh ${USER_TO_CONFIG}
-		# Set the encrypted password for the user
-		usermod -p "$ENCRYPTED_PASSWORD" "$USER_TO_CONFIG"
-		log "User 'user' created with password: $PASSWORD"
-
-		# Remove the user from the wheel group if present
-		if grep '^wheel:' /etc/group | grep -w -q "${USER_TO_CONFIG}"; then
-			log "Removing $USER_TO_CONFIG from the wheel group..."
-			# Remove user from wheel group
-			sed -i.bak -e "s/\b${USER_TO_CONFIG}\b//g" \
-				/etc/group
-		fi
-
-		HOME_DIR="/home/${USER_TO_CONFIG}"
-		if [ -d "$HOME_DIR" ]; then
-			log "Setting permissions on $HOME_DIR..."
-			chown ${USER_TO_CONFIG}:${USER_TO_CONFIG} "$HOME_DIR" # Set ownership
-			# Set permissions
-			chmod 700 "$HOME_DIR"
-			if [ -f "$HOME_DIR/.profile" ]; then
-				if ! grep -Fq "umask 077" "$HOME_DIR/.profile"; then
-					log "Adding umask 077 to $HOME_DIR/.profile"
-					print "umask 077" >>"$HOME_DIR/.profile" # Set umask in .profile
-				fi
-			fi
-		else
-			warn "Home directory for $USER_TO_CONFIG does not exist."
-		fi
+ensure_package() {
+	typeset package=$1
+	if pkg_info -e "$package" >/dev/null 2>&1; then
+		return 0
 	fi
+	log "Installing package $package..."
+	pkg_add "$package" || {
+		error "Could not install $package."
+		return 1
+	}
 }
 
-# Function to configure the firewall
 configure_firewall() {
-	if confirm "Do you want to configure the firewall?"; then
-		log "Configuring PF..."
-		PF_CONF="/etc/pf.conf"
-		# Backup existing PF configuration
-		[ -f "$PF_CONF" ] &&
-			cp "$PF_CONF" "${PF_CONF}.bak"
-		cat >"$PF_CONF" <<'EOF'
-# Custom PF configuration
-# Block all traffic by default
-block all
+	confirm "Install a default-deny PF ruleset for an outbound-only workstation?" || return
+	warn "This replaces /etc/pf.conf. Servers, bridges, VPNs and custom anchors need tailored rules."
+	confirm "Replace the current PF policy after syntax validation?" || return
 
-# Allow all outgoing traffic
-pass out inet
+	pf_tmp=$(mktemp /tmp/pf.conf.XXXXXX) || exit 1
+	cat >"$pf_tmp" <<'EOF'
+# Workstation baseline installed by hardening.ksh
+set skip on lo
+block return
 
-# Allow incoming ICMP traffic (e.g., ping)
-pass in proto icmp
+# Outbound rules are stateful by default, so reply traffic is admitted.
+pass out
 
-# Allow all traffic on the loopback interface
-pass in on lo0
+# IPv6 control traffic required for path MTU and neighbour/router discovery.
+pass inet6 proto icmp6 icmp6-type {
+	unreach, toobig, timex, paramprob,
+	routersol, routeradv, neighbrsol, neighbradv
+}
 EOF
-		pfctl -f "$PF_CONF" # Load new PF configuration
+
+	if ! pfctl -nf "$pf_tmp"; then
+		rm -f "$pf_tmp"
+		error "PF rejected the candidate ruleset; nothing was changed."
+		return
 	fi
+	backup_file /etc/pf.conf || {
+		rm -f "$pf_tmp"
+		error "Could not back up /etc/pf.conf."
+		return
+	}
+	install -o root -g wheel -m 600 "$pf_tmp" /etc/pf.conf || {
+		rm -f "$pf_tmp"
+		error "Could not install /etc/pf.conf."
+		return
+	}
+	rm -f "$pf_tmp"
+	pfctl -f /etc/pf.conf || {
+		error "The validated PF ruleset could not be loaded; restore $BACKUP_PATH."
+		return
+	}
+	if ! pfctl -s info | grep -q '^Status: Enabled'; then
+		pfctl -e || warn "PF is configured but could not be enabled."
+	fi
+	log "PF workstation policy installed and loaded."
 }
 
-# Function to setup Tor service
-setup_tor() {
-	if [ "$TRANSPORT" = "tor" ] &&
-		confirm "Do you want to enable and start the Tor service?"; then
-		log "Enabling and starting Tor..."
+configure_privacy_services() {
+	if confirm "Install and enable the Tor service?"; then
+		ensure_package tor || return
 		rcctl enable tor
-		rcctl start tor
+		rcctl start tor || warn "Tor was enabled but did not start; inspect its log."
 	fi
-}
-
-# Function to configure mirror over Tor
-configure_tor_mirror() {
-	if [ "$TRANSPORT" = "tor" ] &&
-		confirm "Do you want to configure the system to use an" \
-			"onion (Tor) mirror for updating the system and" \
-			"installing/updating packages?"; then
-		log "Configuring /etc/installurl for Tor mirror..."
-		INSTALLURL_FILE="/etc/installurl"
-		_onion="http://kdzlr6wcf5d23chfdwvfwuzm6rstbpzzef"
-		_onion="${_onion}kpozp7kjeugtpnrixldxqd.onion"
-		_onion="${_onion}/pub/OpenBSD/"
-		print "$_onion" >"$INSTALLURL_FILE"
-
-		LOGIN_CONF_FILE="/etc/login.conf"
-		if ! grep -q "setenv=FETCH_CMD" "$LOGIN_CONF_FILE"; then
-			print "default:" >>"$LOGIN_CONF_FILE"
-			_fetch="    :setenv=FETCH_CMD="
-			_fetch="${_fetch}/usr/local/bin/curl"
-			_fetch="${_fetch} -L -s -q -N"
-			_fetch="${_fetch} -x socks5h://127.0.0.1:9050:"
-			print "$_fetch" \
-				>>"$LOGIN_CONF_FILE"
-		fi
-
-		log "Rebuilding login.conf database..."
-		cap_mkdb /etc/login.conf
-
-		log "Patching sysupgrade and syspatch to use torsocks..."
-		for bin in sysupgrade syspatch; do
-			if [ -f "/usr/sbin/$bin" ]; then
-				# Patch binaries to use torsocks
-				sed -i.bak \
-					's,ftp -N,/usr/local/bin/torsocks &,' \
-					"/usr/sbin/$bin" 2>/dev/null
-			fi
-		done
-		_fw1="  torsocks fw_update -p"
-		_fw1="${_fw1} http://kdzlr6wcf5d23chfdwvfwuzm6"
-		_fw1="${_fw1}rstbpzzefkpozp7kjeugtpnrixldxqd"
-		_fw1="${_fw1}.onion/firmware/$(uname -r)/"
-		warn "$_fw1"
-		_fw2="  torsocks fw_update -p"
-		_fw2="${_fw2} http://kdzlr6wcf5d23chfdwvfwuzm6"
-		_fw2="${_fw2}rstbpzzefkpozp7kjeugtpnrixldxqd"
-		_fw2="${_fw2}.onion/firmware/snapshots/"
-		warn "$_fw2"
-	fi
-}
-
-# Function to setup I2P service
-setup_i2p() {
-	if [ "$TRANSPORT" = "i2p" ] &&
-		confirm "Do you want to enable and start the I2P (i2pd)\
-service?"; then
-		log "Enabling and starting i2pd..."
+	if confirm "Install and enable the I2P service?"; then
+		ensure_package i2pd || return
 		rcctl enable i2pd
-		rcctl start i2pd
+		rcctl start i2pd || warn "i2pd was enabled but did not start; inspect its log."
 	fi
 }
 
-# Function to configure mirror over I2P
-configure_i2p_mirror() {
-	if [ "$TRANSPORT" = "i2p" ] &&
-		confirm "Do you want to configure the system to use an\
- I2P mirror for updates and packages?"; then
-		log "Configuring /etc/i2pd/tunnels.conf for I2P mirror..."
-		TUNNELS_CONF="/etc/i2pd/tunnels.conf"
-		[ -f "$TUNNELS_CONF" ] && cp "$TUNNELS_CONF" "${TUNNELS_CONF}.bak"
-		cat >"$TUNNELS_CONF" <<'EOF'
-[MIRROR]
-type = client
-address = 127.0.0.1
-port = 8080
-destination = 2st32tfsqjnvnmnmy3e5o5y5hphtgt4b2letuebyv75ohn2w5umq.b32.i2p
-destinationport = 8081
-keys = mirror.dat
-EOF
+configure_clamav() {
+	confirm "Install ClamAV and enable its database/daemon services?" || return
+	ensure_package clamav || return
 
-		log "Configuring /etc/installurl for I2P mirror..."
-		INSTALLURL_FILE="/etc/installurl"
-		print "http://127.0.0.1:8080/pub/OpenBSD/" >"$INSTALLURL_FILE"
-
-		if ! grep -q "firmware.openbsd.org" /etc/hosts; then
-			log "Adding firmware.openbsd.org entry to /etc/hosts..."
-			print "127.0.0.9 firmware.openbsd.org" >>/etc/hosts
-		fi
-
-		log "Restarting i2pd to apply tunnel configuration..."
-		rcctl restart i2pd
-
-		warn "Recommended fw_update over I2P:"
-		warn "  fw_update -p http://127.0.0.1:8080/firmware/$(uname -r)/"
-		warn "  fw_update -p http://127.0.0.1:8080/firmware/snapshots/"
-	fi
-}
-
-# Function to disable firmware updates
-disable_firmware_updates() {
-	if confirm "Do you want to disable firmware updates?"; then
-		log "Configuring firmware mirror..."
-		if ! grep -q "firmware.openbsd.org" /etc/hosts; then
-			log "Adding firmware.openbsd.org entry to /etc/hosts..."
-			# Add entry to /etc/hosts
-			print "127.0.0.9 firmware.openbsd.org" \
-				>>/etc/hosts
-		fi
-	fi
-}
-
-# Function to disable USB controllers
-disable_usb_controllers() {
-	if confirm "Do you want to disable USB controllers?"; then
-		log "Disabling USB controllers..."
-		cat >/etc/bsd.re-config <<'EOF'
-disable usb
-disable xhci
-EOF
-	fi
-}
-
-# Function to configure ClamAV services
-configure_clamd() {
-	if confirm "Do you want to configure ClamAV antivirus?"; then
-		log "Configuring ClamAV..."
-		rcctl enable clamd
-		rcctl enable freshclam
-		rcctl start clamd
-		rcctl start freshclam
-
-		CLAMD_CONF="/etc/clamd.conf"
-		FRESHCLAM_CONF="/etc/freshclam.conf"
-		if [ -f "$CLAMD_CONF" ]; then
-			sed -i.bak '/^Example$/d' "$CLAMD_CONF" # Remove 'Example' line
-			log "Removed 'Example' from $CLAMD_CONF"
-			# Uncomment LocalSocket line
-			sed -i \
-				'/^#LocalSocket \/run\/clamav\/clamd.sock/s/^#//' \
-				"$CLAMD_CONF"
-			log "Uncommented 'LocalSocket /run/clamav/clamd.sock' in $CLAMD_CONF"
-			if ! grep -q '^OnAccessIncludePath /home' "$CLAMD_CONF"; then
-				cat >>"$CLAMD_CONF" <<'EOF'
-# On-access scan configuration
-OnAccessIncludePath /home
-OnAccessExcludeRootUID yes
-OnAccessPrevention yes
-EOF
-				log "Configured on-access scanning for /home in $CLAMD_CONF"
-			fi
-		fi
-		if [ -f "$FRESHCLAM_CONF" ]; then
-			sed -i.bak '/^Example$/d' "$FRESHCLAM_CONF" # Remove 'Example' line
-			log "Removed 'Example' from $FRESHCLAM_CONF"
-		fi
-
-		if command -v clamonacc >/dev/null 2>&1; then
-			rcctl enable clamonacc
-			rcctl start clamonacc
-			log "Enabled clamonacc for on-access scanning"
-		else
-			warn "clamonacc not available; on-access scanning may not be active"
-		fi
-	fi
-}
-
-# Function to enforce W^X on all filesystems
-enforce_wx() {
-	if confirm "Do you want to enforce W^X on all filesystems?"; then
-		log "Enforcing W^X..."
-		SYSCTL_CONF="/etc/sysctl.conf"
-		grep -q '^kern.wxallowed=0' "$SYSCTL_CONF" \
-			2>/dev/null ||
-			print "kern.wxallowed=0" >>"$SYSCTL_CONF"
-		sysctl kern.wxallowed=0
-
-		FSTAB="/etc/fstab"
-		if [ -f "$FSTAB" ]; then
-			cp "$FSTAB" "${FSTAB}.bak"
-			awk '
-			/^[[:space:]]*#/ {print; next}
-			NF >= 4 {
-				opts = $4
-				n = split(opts, a, ",")
-				out = ""
-				for (i = 1; i <= n; i++) {
-					if (a[i] != "wxallowed" && a[i] != "") {
-						out = (out == "" ? a[i] : out "," a[i])
-					}
-				}
-				if (out == "") out = "rw"
-				$4 = out
+	for config in /etc/clamd.conf /etc/freshclam.conf; do
+		if [ -f "$config" ] && grep -q '^Example$' "$config"; then
+			backup_file "$config" || {
+				error "Could not back up $config."
+				return
 			}
-			{print}
-			' "${FSTAB}.bak" >"$FSTAB"
-			log "Removed wxallowed from $FSTAB"
-			mount -a || warn "Could not remount all" \
-				"filesystems; reboot recommended"
-		fi
-	fi
-}
-
-# Function to apply system configuration changes for memory
-# allocation hardening
-harden_malloc() {
-	if confirm "Do you want to apply system configuration\
- changes for memory allocation hardening?"; then
-		log "Applying vm.malloc_conf=S..."
-		SYSCTL_CONF="/etc/sysctl.conf"
-		# Add setting to sysctl.conf
-		grep -q "^vm.malloc_conf=S" "$SYSCTL_CONF" \
-			2>/dev/null ||
-			print "vm.malloc_conf=S" \
-				>>"$SYSCTL_CONF"
-		# Apply setting immediately
-		sysctl vm.malloc_conf=S
-	fi
-}
-
-# Function to configure anacron for periodic tasks
-configure_anacron() {
-	if confirm "Do you want to configure anacron for periodic tasks?"; then
-		log "Configuring anacron..."
-		ANACRON_TAB="/etc/anacrontab"
-		cat >"$ANACRON_TAB" <<'EOF'
-SHELL=/bin/sh
-PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
-MAILTO=""
-
-1  5 daily_maintenance    /bin/sh /etc/daily
-7  5 weekly_maintenance   /bin/sh /etc/weekly
-30 5 monthly_maintenance  /bin/sh /etc/monthly
-EOF
-
-		CRON_TMP=$(mktemp /tmp/cron.XXXXXX) # Securely create a temporary file
-		crontab -l >"$CRON_TMP" 2>/dev/null
-		if ! grep -q "/usr/local/sbin/anacron -ds" "$CRON_TMP"; then
-			print "@reboot /usr/local/sbin/anacron -ds" >>"$CRON_TMP"
-			print "0 1 * * * /usr/local/sbin/anacron -ds" >>"$CRON_TMP"
-			crontab "$CRON_TMP"
-		fi
-		rm -f "$CRON_TMP"
-
-		# Create /etc/daily.local and add commands
-		DAILY_LOCAL="/etc/daily.local"
-		cat >"$DAILY_LOCAL" <<'EOF'
-sysupgrade -ns
-pkg_add -u
-EOF
-	fi
-}
-
-# Function to make environment files immutable
-make_shell_files_immutable() {
-	if confirm "Do you want to make environment files immutable?"; then
-		log "Making environment files immutable..."
-		for file in /etc/profile /etc/csh.cshrc \
-			/etc/csh.login /etc/csh.logout \
-			/etc/ksh.kshrc /etc/login.conf \
-			/etc/login.conf.db; do
-			if [ -f "$file" ]; then
-				chflags schg "$file" # Set schg flag to make the file immutable
-				log "Set schg flag on $file"
+			clam_tmp=$(mktemp /tmp/clam-config.XXXXXX) || exit 1
+			if ! sed '/^Example$/d' "$config" >"$clam_tmp"; then
+				rm -f "$clam_tmp"
+				error "Could not activate $config."
+				return
 			fi
-		done
-	fi
-}
-
-# Function to configure Xenocara
-configure_xenocara() {
-	# Configure Xenocara to use CWM instead of FVWM by default
-	if confirm "Do you want to configure Xenocara to use CWM\
- instead of FVWM by default?"; then
-		log "Configuring Xenocara to use CWM instead of FVWM by default..."
-		XSESSION="/etc/X11/xenodm/Xsession"
-		if [ -f "$XSESSION" ]; then
-			# Replace FVWM with CWM
-			sed -i.bak 's,exec fvwm,exec cwm,' \
-				"$XSESSION"
-			log "Replaced 'exec fvwm' with 'exec cwm' in $XSESSION"
-			rcctl enable xenodm
+			if ! install -o root -g wheel -m 644 "$clam_tmp" "$config"; then
+				rm -f "$clam_tmp"
+				error "Could not install the activated $config."
+				return
+			fi
+			rm -f "$clam_tmp"
 		fi
-	fi
+	done
 
-	# Disable X11 keyboard shortcuts that can bypass screen locks
-	if confirm "Do you want to disable X11 magic keystrokes\
- that can bypass screen locks?"; then
-		log "Disabling X11 magic keystrokes..."
-		XORG_CONF_DIR="/usr/X11R6/share/X11/xorg.conf.d"
-		SERVER_FLAGS_CONF="$XORG_CONF_DIR/serverflags.conf"
-		mkdir -p "$XORG_CONF_DIR"
-		cat >"$SERVER_FLAGS_CONF" <<EOF
-Section "Server Flags"
-  Option "DontZap" "true"
-  Option "DontVTSwitch" "true"
-  Option "AllowClosedownGrabs" "false"
-EndSection
-EOF
-		chown root:bin "$SERVER_FLAGS_CONF"
-		chmod 644 "$SERVER_FLAGS_CONF"
-		log "Created $SERVER_FLAGS_CONF with magic keystrokes disabled."
-	fi
-
-	# Fix screen tearing for Intel-based video chipsets
-	if confirm "Do you want to fix screen tearing for Intel-\
-based video chipsets?"; then
-		log "Fixing screen tearing for Intel-based video chipsets..."
-		mkdir -p /etc/X11/xorg.conf.d
-		cat >/etc/X11/xorg.conf.d/intel.conf <<'EOF'
-Section "Device"
-  Identifier "drm"
-  Driver "intel"
-  Option "TearFree" "true"
-EndSection
-EOF
-		log "Created /etc/X11/xorg.conf.d/intel.conf" \
-			"with TearFree option enabled."
-	fi
+	rcctl enable freshclam
+	rcctl enable clamd
+	rcctl start freshclam || warn "freshclam did not start; inspect its log."
+	rcctl start clamd || warn "clamd did not start; inspect its log."
+	warn "ClamAV is available for explicit scans; Linux-only clamonacc is not configured."
 }
 
-# Function to question for system restart
-question_restart() {
-	log "OpenBSD configuration completed."
-	if confirm "Do you want to restart the system now?"; then
-		log "Rebooting the system..."
-		reboot
+enforce_wx_mounts() {
+	confirm "Remove every wxallowed option from /etc/fstab?" || return
+	[ -f /etc/fstab ] || {
+		warn "/etc/fstab does not exist."
+		return
+	}
+	if ! awk '
+		!/^[[:space:]]*#/ && NF >= 4 {
+			n = split($4, option, ",")
+			for (i = 1; i <= n; i++)
+				if (option[i] == "wxallowed") found = 1
+		}
+		END { exit !found }
+	' /etc/fstab; then
+		log "No wxallowed mount option is present."
+		return
+	fi
+	warn "Removing wxallowed can prevent ports that require executable writable mappings from starting."
+	confirm "Continue after reviewing the affected filesystems and installed software?" || return
+
+	backup_file /etc/fstab || {
+		error "Could not back up /etc/fstab."
+		return
+	}
+	fstab_tmp=$(mktemp /tmp/fstab.XXXXXX) || exit 1
+	awk '
+	/^[[:space:]]*#/ || NF < 4 { print; next }
+	{
+		n = split($4, option, ",")
+		result = ""
+		for (i = 1; i <= n; i++)
+			if (option[i] != "wxallowed" && option[i] != "")
+				result = result (result == "" ? "" : ",") option[i]
+		$4 = (result == "" ? "rw" : result)
+		print
+	}' /etc/fstab >"$fstab_tmp" || {
+		rm -f "$fstab_tmp"
+		error "Could not generate the new fstab."
+		return
+	}
+	if ! install -o root -g wheel -m 600 "$fstab_tmp" /etc/fstab; then
+		rm -f "$fstab_tmp"
+		error "Could not install the new /etc/fstab."
+		return
+	fi
+	rm -f "$fstab_tmp"
+	REBOOT_NEEDED=1
+	warn "Existing mounts are unchanged. Reboot is required to enforce the new flags."
+}
+
+harden_malloc() {
+	confirm "Enable vm.malloc_conf=S system-wide (security-audit mode)?" || return
+	warn "This enables expensive malloc checks and can expose bugs or reduce performance."
+	confirm "Apply and persist vm.malloc_conf=S?" || return
+
+	backup_file /etc/sysctl.conf || {
+		error "Could not back up /etc/sysctl.conf."
+		return
+	}
+	if ! sysctl vm.malloc_conf=S; then
+		error "The running kernel rejected vm.malloc_conf; nothing was persisted."
+		return
+	fi
+	sysctl_tmp=$(mktemp /tmp/sysctl.conf.XXXXXX) || exit 1
+	if [ -f /etc/sysctl.conf ]; then
+		awk '!/^[[:space:]]*vm\.malloc_conf[[:space:]]*=/' \
+			/etc/sysctl.conf >"$sysctl_tmp"
+	fi
+	print 'vm.malloc_conf=S' >>"$sysctl_tmp"
+	if ! install -o root -g wheel -m 600 "$sysctl_tmp" /etc/sysctl.conf; then
+		rm -f "$sysctl_tmp"
+		error "Could not install /etc/sysctl.conf; the setting is active only until reboot."
+		return
+	fi
+	rm -f "$sysctl_tmp"
+	log "vm.malloc_conf=S is active and persistent."
+}
+
+configure_anacron() {
+	confirm "Use anacron for the standard daily, weekly and monthly jobs?" || return
+	ensure_package anacron || return
+
+	backup_file /etc/anacrontab || {
+		error "Could not back up /etc/anacrontab."
+		return
+	}
+	anacron_tmp=$(mktemp /tmp/anacrontab.XXXXXX) || exit 1
+	cat >"$anacron_tmp" <<'EOF'
+SHELL=/bin/sh
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+HOME=/var/log
+
+1  5  cron.daily    /bin/sh /etc/daily
+7  10 cron.weekly   /bin/sh /etc/weekly
+30 15 cron.monthly  /bin/sh /etc/monthly
+EOF
+	if ! install -o root -g wheel -m 600 "$anacron_tmp" /etc/anacrontab; then
+		rm -f "$anacron_tmp"
+		error "Could not install /etc/anacrontab."
+		return
+	fi
+	rm -f "$anacron_tmp"
+
+	cron_old=$(mktemp /tmp/root-crontab.XXXXXX) || exit 1
+	crontab -l >"$cron_old" 2>/dev/null || : >"$cron_old"
+	cron_backup=$(mktemp /root/crontab.before-anacron.XXXXXX) || exit 1
+	cp "$cron_old" "$cron_backup"
+	log "Root crontab backup: $cron_backup"
+	cron_new=$(mktemp /tmp/root-crontab-new.XXXXXX) || exit 1
+	awk '
+	/^[[:space:]]*#/ { print; next }
+	/\/usr\/local\/sbin\/anacron[[:space:]]+-ds/ { next }
+	/\/bin\/sh[[:space:]]+\/etc\/(daily|weekly|monthly)([[:space:]]|$)/ {
+		print "# disabled in favour of anacron: " $0
+		next
+	}
+	{ print }
+	END {
+		print "@reboot /usr/local/sbin/anacron -ds"
+		print "15 2 * * * /usr/local/sbin/anacron -ds"
+	}' "$cron_old" >"$cron_new"
+	if crontab "$cron_new"; then
+		log "Anacron installed without unattended OS or package upgrades."
 	else
-		warn "Please remember to reboot the system later" \
-			"to apply all changes."
+		error "Could not install root's updated crontab."
+	fi
+	rm -f "$cron_old" "$cron_new"
+}
+
+finish() {
+	if [ "$REBOOT_NEEDED" -eq 1 ]; then
+		warn "A reboot is required for the changed mount flags."
+		if confirm "Reboot now?"; then
+			reboot
+		fi
+	else
+		log "Selected configuration tasks are complete; no reboot is required by this script."
 	fi
 }
 
-# Main script execution
 main() {
 	check_root
-	select_transport
-	install_packages
-	configure_user
 	configure_firewall
-	setup_tor
-	configure_tor_mirror
-	setup_i2p
-	configure_i2p_mirror
-	disable_firmware_updates
-	disable_usb_controllers
-	configure_clamd
-	enforce_wx
+	configure_privacy_services
+	configure_clamav
+	enforce_wx_mounts
 	harden_malloc
 	configure_anacron
-	make_shell_files_immutable
-	configure_xenocara
-	question_restart
+	finish
 }
 
-main
+main "$@"

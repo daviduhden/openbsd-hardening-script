@@ -1,46 +1,46 @@
-# OpenBSD Hardening Script
+# OpenBSD hardening helpers
 
-## Overview
+This is an interactive, conservative set of OpenBSD workstation-hardening helpers. Every material change is optional, existing configuration is backed up, and candidate PF syntax is checked before installation.
 
-This script automates the hardening of an OpenBSD workstation based on various guides from [Solène Rapenne](https://dataswamp.org/~solene/index.html). Any contribution is highly appreciated.
+Run it as root on OpenBSD after reviewing both the script and the policy choices:
 
-## Features
+```sh
+$ doas ksh hardening.ksh
+```
 
-- Installs essential packages: anacron, clamav, and (optionally) tor/torsocks or i2pd.
-- Enhances user settings for improved security.
-- Configures a hardened firewall.
-- Lets you choose a single transport (Tor or I2P) for updates (never both).
-- Enables the Tor service and configures an onion mirror (optional).
-- Enables the I2P (i2pd) service and configures an I2P mirror (optional).
-- Disables USB ports (ensure you have a PS/2 keyboard and mouse).
-- Activates ClamAV antivirus services and on-access scanning for /home.
-- Applies memory allocation hardening configurations.
-- Enforces W^X on all filesystems.
-- Sets up anacron for periodic tasks.
-- Makes shell environment files immutable with `chflags`.
-- Configures Xenocara to use CWM by default, disables X11 magic keystrokes that can bypass screen locks, and fixes screen tearing for Intel video chipsets.
+## Supported operations
 
-## Requirements
+- Install a default-deny, outbound-only workstation PF policy. It keeps loopback unfiltered, relies on PF's stateful outbound rules and admits the ICMPv6 control messages needed for IPv6. It is not suitable unchanged for servers, routers, bridges, VPN gateways or machines with custom anchors.
+- Optionally install and enable the packaged Tor and/or i2pd services. The script does not redirect OpenBSD updates through them.
+- Install ClamAV, activate the packaged sample configurations by removing `Example`, then enable `freshclam` and `clamd`. Scanning remains explicit; `clamonacc` on-access scanning is Linux-specific and is not configured.
+- Remove `wxallowed` from `/etc/fstab`. OpenBSD enforces W^X by default and `wxallowed` is the per-mount relaxation. A second confirmation warns that ports requiring executable writable mappings may stop working. Existing mounts are not silently remounted; the change takes effect after reboot.
+- Optionally set the documented `vm.malloc_conf=S` security-audit mode. This is more expensive than the OpenBSD default and can affect performance, so a second confirmation is required.
+- Configure the packaged `anacron` exactly for `/etc/daily`, `/etc/weekly` and `/etc/monthly`, comment their direct root-crontab entries to avoid duplicate execution, and invoke anacron at boot and daily. It never runs `sysupgrade` or `pkg_add -u` unattended.
 
-- Must be run as root.
-- [OpenBSD operating system](https://www.openbsd.org/faq/faq4.html#Download).
+Backups use a unique `.hardening.XXXXXX` suffix next to the changed file. The previous root crontab is saved below `/root/crontab.before-anacron.XXXXXX`.
 
-## Usage
+## Deliberately excluded behaviour
 
-1. Clone the repository:
-    ```sh
-    git clone https://github.com/daviduhden/openbsd-hardening-script.git
-    cd openbsd-hardening-script
-    ```
+Earlier versions performed operations that are unsupported, obsolete or counterproductive and have been removed:
 
-2. Make the script executable:
-    ```sh
-    chmod +x hardening.ksh
-    ```
+- creating a hard-coded user with an MD5-crypt password and printing that password;
+- patching `/usr/sbin/sysupgrade` and `/usr/sbin/syspatch`, changing `login.conf`, or selecting unverified Tor/I2P mirrors;
+- blocking `firmware.openbsd.org` (firmware updates are security updates);
+- setting the nonexistent `kern.wxallowed` sysctl or pretending that `mount -a` remounts active filesystems;
+- making base configuration files immutable with `schg`;
+- replacing Xenocara's base `Xsession`, forcing the legacy Intel X driver, or writing into `/usr/X11R6`;
+- disabling every USB controller, which can remove keyboards, storage and recovery paths without a machine-specific hardware review.
 
-3. Run the script:
-    ```sh
-    ksh hardening.ksh
-    ```
+## Official references
 
-4. Follow the interactive questions to apply the desired configurations.
+- [pf.conf(5)](https://man.openbsd.org/pf.conf.5) and [pfctl(8)](https://man.openbsd.org/pfctl.8)
+- [mount(8)](https://man.openbsd.org/mount.8) and [fstab(5)](https://man.openbsd.org/fstab.5)
+- [malloc(3)](https://man.openbsd.org/malloc.3) (`vm.malloc_conf` and option `S`)
+- [sysctl(8)](https://man.openbsd.org/sysctl.8)
+- [bsd.re-config(5)](https://man.openbsd.org/bsd.re-config.5)
+- [OpenBSD ports tree: ClamAV](https://github.com/openbsd/ports/tree/master/security/clamav)
+- [OpenBSD ports tree: anacron](https://github.com/openbsd/ports/tree/master/sysutils/anacron)
+
+## License
+
+See [LICENSE](LICENSE).
