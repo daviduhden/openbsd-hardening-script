@@ -7,21 +7,9 @@ PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 export PATH
 umask 077
 
-if [ -t 1 ] && [ "${NO_COLOR:-}" != 1 ]; then
-	GREEN="\033[32m"
-	YELLOW="\033[33m"
-	RED="\033[31m"
-	RESET="\033[0m"
-else
-	GREEN=""
-	YELLOW=""
-	RED=""
-	RESET=""
-fi
-
-log() { print "${GREEN}[INFO]${RESET} $*"; }
-warn() { print "${YELLOW}[WARN]${RESET} $*" >&2; }
-error() { print "${RED}[ERROR]${RESET} $*" >&2; }
+log() { print "[INFO] $*"; }
+warn() { print "[WARN] $*" >&2; }
+error() { print "[ERROR] $*" >&2; }
 
 REBOOT_NEEDED=0
 BACKUP_PATH=""
