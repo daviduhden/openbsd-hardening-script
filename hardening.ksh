@@ -13,14 +13,23 @@ error() { print "[ERROR] $*" >&2; }
 
 REBOOT_NEEDED=0
 BACKUP_PATH=""
+TMP_FILES=""
 
 confirm() {
-	print "$1 [y/N]: \c"
+	answer=""
+	printf '%s [y/N]: ' "$1"
 	read -r answer
 	case "$answer" in
 	[yY] | [yY][eE][sS]) return 0 ;;
 	*) return 1 ;;
 	esac
+}
+
+check_platform() {
+	if [ "$(uname -s)" != "OpenBSD" ]; then
+		error "This script only supports OpenBSD."
+		exit 1
+	fi
 }
 
 check_root() {
@@ -30,8 +39,22 @@ check_root() {
 	fi
 }
 
+track_tmp() {
+	TMP_FILES="$TMP_FILES $1"
+}
+
+cleanup_tmp() {
+	typeset file
+	for file in $TMP_FILES; do
+		rm -f "$file"
+	done
+}
+
+trap 'cleanup_tmp' EXIT
+trap 'exit 130' HUP INT TERM
+
 backup_file() {
-	typeset file=$1
+	typeset file="$1"
 	BACKUP_PATH=""
 	[ -f "$file" ] || return 0
 	BACKUP_PATH=$(mktemp "${file}.hardening.XXXXXX") || return 1
@@ -44,7 +67,7 @@ backup_file() {
 }
 
 ensure_package() {
-	typeset package=$1
+	typeset package="$1"
 	if pkg_info -e "$package" >/dev/null 2>&1; then
 		return 0
 	fi
@@ -61,6 +84,7 @@ configure_firewall() {
 	confirm "Replace the current PF policy after syntax validation?" || return
 
 	pf_tmp=$(mktemp /tmp/pf.conf.XXXXXX) || exit 1
+	track_tmp "$pf_tmp"
 	cat >"$pf_tmp" <<'EOF'
 # Workstation baseline installed by hardening.ksh
 set skip on lo
@@ -92,10 +116,17 @@ EOF
 		return
 	}
 	rm -f "$pf_tmp"
-	pfctl -f /etc/pf.conf || {
-		error "The validated PF ruleset could not be loaded; restore $BACKUP_PATH."
+	if ! pfctl -f /etc/pf.conf; then
+		if [ -n "$BACKUP_PATH" ] && [ -f "$BACKUP_PATH" ] &&
+			install -o root -g wheel -m 600 \
+			    "$BACKUP_PATH" /etc/pf.conf &&
+			pfctl -f /etc/pf.conf; then
+			error "The new ruleset did not load; previous PF policy restored."
+		else
+			error "The validated ruleset did not load; restore $BACKUP_PATH."
+		fi
 		return
-	}
+	fi
 	if ! pfctl -s info | grep -q '^Status: Enabled'; then
 		pfctl -e || warn "PF is configured but could not be enabled."
 	fi
@@ -105,13 +136,21 @@ EOF
 configure_privacy_services() {
 	if confirm "Install and enable the Tor service?"; then
 		ensure_package tor || return
-		rcctl enable tor
-		rcctl start tor || warn "Tor was enabled but did not start; inspect its log."
+		if ! rcctl enable tor; then
+			error "Could not enable Tor."
+			return
+		fi
+		rcctl start tor ||
+			warn "Tor did not start; inspect its log."
 	fi
 	if confirm "Install and enable the I2P service?"; then
 		ensure_package i2pd || return
-		rcctl enable i2pd
-		rcctl start i2pd || warn "i2pd was enabled but did not start; inspect its log."
+		if ! rcctl enable i2pd; then
+			error "Could not enable i2pd."
+			return
+		fi
+		rcctl start i2pd ||
+			warn "i2pd did not start; inspect its log."
 	fi
 }
 
@@ -120,12 +159,13 @@ configure_clamav() {
 	ensure_package clamav || return
 
 	for config in /etc/clamd.conf /etc/freshclam.conf; do
-		if [ -f "$config" ] && grep -q '^Example$' "$config"; then
+		if [ -f "$config" ] && grep -q '^Example$' "$config" 2>/dev/null; then
 			backup_file "$config" || {
 				error "Could not back up $config."
 				return
 			}
 			clam_tmp=$(mktemp /tmp/clam-config.XXXXXX) || exit 1
+			track_tmp "$clam_tmp"
 			if ! sed '/^Example$/d' "$config" >"$clam_tmp"; then
 				rm -f "$clam_tmp"
 				error "Could not activate $config."
@@ -140,8 +180,14 @@ configure_clamav() {
 		fi
 	done
 
-	rcctl enable freshclam
-	rcctl enable clamd
+	if ! rcctl enable freshclam; then
+		error "Could not enable freshclam."
+		return
+	fi
+	if ! rcctl enable clamd; then
+		error "Could not enable clamd."
+		return
+	fi
 	rcctl start freshclam || warn "freshclam did not start; inspect its log."
 	rcctl start clamd || warn "clamd did not start; inspect its log."
 	warn "ClamAV is available for explicit scans; Linux-only clamonacc is not configured."
@@ -172,6 +218,7 @@ enforce_wx_mounts() {
 		return
 	}
 	fstab_tmp=$(mktemp /tmp/fstab.XXXXXX) || exit 1
+	track_tmp "$fstab_tmp"
 	awk '
 	/^[[:space:]]*#/ || NF < 4 { print; next }
 	{
@@ -211,11 +258,18 @@ harden_malloc() {
 		return
 	fi
 	sysctl_tmp=$(mktemp /tmp/sysctl.conf.XXXXXX) || exit 1
+	track_tmp "$sysctl_tmp"
 	if [ -f /etc/sysctl.conf ]; then
-		awk '!/^[[:space:]]*vm\.malloc_conf[[:space:]]*=/' \
-			/etc/sysctl.conf >"$sysctl_tmp"
+		if ! awk '!/^[[:space:]]*vm\.malloc_conf[[:space:]]*=/' \
+		    /etc/sysctl.conf >"$sysctl_tmp"; then
+			error "Could not rewrite /etc/sysctl.conf; the setting is active only until reboot."
+			return
+		fi
 	fi
-	print 'vm.malloc_conf=S' >>"$sysctl_tmp"
+	print 'vm.malloc_conf=S' >>"$sysctl_tmp" || {
+		error "Could not prepare /etc/sysctl.conf; the setting is active only until reboot."
+		return
+	}
 	if ! install -o root -g wheel -m 600 "$sysctl_tmp" /etc/sysctl.conf; then
 		rm -f "$sysctl_tmp"
 		error "Could not install /etc/sysctl.conf; the setting is active only until reboot."
@@ -234,6 +288,7 @@ configure_anacron() {
 		return
 	}
 	anacron_tmp=$(mktemp /tmp/anacrontab.XXXXXX) || exit 1
+	track_tmp "$anacron_tmp"
 	cat >"$anacron_tmp" <<'EOF'
 SHELL=/bin/sh
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
@@ -251,14 +306,21 @@ EOF
 	rm -f "$anacron_tmp"
 
 	cron_old=$(mktemp /tmp/root-crontab.XXXXXX) || exit 1
+	track_tmp "$cron_old"
 	crontab -l >"$cron_old" 2>/dev/null || : >"$cron_old"
 	cron_backup=$(mktemp /root/crontab.before-anacron.XXXXXX) || exit 1
-	cp "$cron_old" "$cron_backup"
+	if ! cp "$cron_old" "$cron_backup"; then
+		error "Could not back up the root crontab."
+		return
+	fi
 	log "Root crontab backup: $cron_backup"
 	cron_new=$(mktemp /tmp/root-crontab-new.XXXXXX) || exit 1
-	awk '
+	track_tmp "$cron_new"
+	if ! awk '
 	/^[[:space:]]*#/ { print; next }
-	/\/usr\/local\/sbin\/anacron[[:space:]]+-ds/ { next }
+	/\/usr\/local\/sbin\/anacron[[:space:]]+-[ds][ds]([[:space:]]|$)/ {
+		next
+	}
 	/\/bin\/sh[[:space:]]+\/etc\/(daily|weekly|monthly)([[:space:]]|$)/ {
 		print "# disabled in favour of anacron: " $0
 		next
@@ -267,7 +329,10 @@ EOF
 	END {
 		print "@reboot /usr/local/sbin/anacron -ds"
 		print "15 2 * * * /usr/local/sbin/anacron -ds"
-	}' "$cron_old" >"$cron_new"
+	}' "$cron_old" >"$cron_new"; then
+		error "Could not generate the new root crontab; it is unchanged."
+		return
+	fi
 	if crontab "$cron_new"; then
 		log "Anacron installed without unattended OS or package upgrades."
 	else
@@ -288,6 +353,11 @@ finish() {
 }
 
 main() {
+	if [ "$#" -gt 0 ]; then
+		error "This script takes no arguments."
+		exit 1
+	fi
+	check_platform
 	check_root
 	configure_firewall
 	configure_privacy_services

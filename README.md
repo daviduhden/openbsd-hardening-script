@@ -1,6 +1,6 @@
 # OpenBSD hardening helpers
 
-This is an interactive, conservative set of OpenBSD workstation-hardening helpers. Every material change is optional, existing configuration is backed up, and candidate PF syntax is checked before installation.
+This is an interactive, conservative set of OpenBSD workstation-hardening helpers. Every material change is optional, existing configuration is backed up, and candidate PF syntax is checked before installation. The script only runs on OpenBSD and removes its temporary working files on exit.
 
 Run it as root on OpenBSD after reviewing both the script and the policy choices:
 
@@ -17,7 +17,7 @@ $ doas ksh hardening.ksh
 - Optionally set the documented `vm.malloc_conf=S` security-audit mode. This is more expensive than the OpenBSD default and can affect performance, so a second confirmation is required.
 - Configure the packaged `anacron` exactly for `/etc/daily`, `/etc/weekly` and `/etc/monthly`, comment their direct root-crontab entries to avoid duplicate execution, and invoke anacron at boot and daily. It never runs `sysupgrade` or `pkg_add -u` unattended.
 
-Backups use a unique `.hardening.XXXXXX` suffix next to the changed file. The previous root crontab is saved below `/root/crontab.before-anacron.XXXXXX`.
+Backups use a unique `.hardening.XXXXXX` suffix next to the changed file. The previous root crontab is saved below `/root/crontab.before-anacron.XXXXXX`. If the loaded PF ruleset is rejected after installation, the previous `/etc/pf.conf` is restored and reloaded.
 
 ## Deliberately excluded behaviour
 
