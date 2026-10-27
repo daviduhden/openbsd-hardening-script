@@ -9,7 +9,10 @@ umask 077
 
 log() { print "[INFO] $*"; }
 warn() { print "[WARN] $*" >&2; }
-error() { print "[ERROR] $*" >&2; return 1; }
+error() {
+	print "[ERROR] $*" >&2
+	return 1
+}
 
 REBOOT_NEEDED=0
 BACKUP_PATH=""
@@ -47,6 +50,11 @@ track_tmp() {
 	TMP_FILES="$TMP_FILES $1"
 }
 
+# Remove only paths registered by this script. The list is whitespace
+# separated, so callers must register temporary paths without whitespace.
+# Cleanup is best-effort and must not hide the status of the selected task.
+# The EXIT trap calls this function indirectly, which ShellCheck cannot infer.
+# shellcheck disable=SC2329
 cleanup_tmp() {
 	typeset file
 	for file in $TMP_FILES; do
@@ -57,6 +65,9 @@ cleanup_tmp() {
 trap 'cleanup_tmp' EXIT
 trap 'exit 130' HUP INT TERM
 
+# Save an existing regular file to a unique sibling path, preserving its
+# metadata with cp -p. An absent file is not an error; BACKUP_PATH remains
+# empty so callers can distinguish a newly created target from a replacement.
 backup_file() {
 	typeset file="$1"
 	BACKUP_PATH=""
@@ -70,12 +81,16 @@ backup_file() {
 	log "Backup: $BACKUP_PATH"
 }
 
+# Restore a previously saved file over its target. This helper deliberately
+# does not remove the backup, allowing the operator to inspect or reuse it.
 restore_file() {
 	typeset backup="$1" target="$2"
 	[ -n "$backup" ] && [ -f "$backup" ] || return 1
 	cp -p "$backup" "$target"
 }
 
+# Roll back either kind of change: restore the saved contents when a file
+# existed, or remove the target when this run created it.
 restore_or_remove() {
 	typeset backup="$1" target="$2"
 	if [ -n "$backup" ] && [ -f "$backup" ]; then
@@ -85,6 +100,8 @@ restore_or_remove() {
 	fi
 }
 
+# Restore ClamAV configuration files only when this run recorded a backup.
+# Package installation and service state are outside this file-level rollback.
 restore_clamav_configs() {
 	if [ -n "$CLAMD_BACKUP" ]; then
 		restore_file "$CLAMD_BACKUP" /etc/clamd.conf ||
@@ -96,6 +113,8 @@ restore_clamav_configs() {
 	fi
 }
 
+# Keep one pre-change copy of rc.conf.local for this run, even if several
+# services are enabled. The flag is set only after the backup succeeds.
 backup_rc_conf_once() {
 	[ "$RC_CONF_BACKED_UP" -eq 1 ] && return 0
 	backup_file /etc/rc.conf.local || return 1
@@ -116,6 +135,8 @@ ensure_package() {
 
 restore_runtime_malloc() {
 	typeset old="$1"
+	# An empty prior value is not a value that can be restored immediately;
+	# it indicates the live setting may remain in effect until reboot.
 	if [ -n "$old" ]; then
 		sysctl "vm.malloc_conf=$old" >/dev/null 2>&1 ||
 			warn "The previous vm.malloc_conf value could not be restored."
@@ -124,6 +145,8 @@ restore_runtime_malloc() {
 	fi
 }
 
+# Restore both the on-disk PF policy and the active ruleset. A successful file
+# copy alone does not put the previous firewall rules back into effect.
 restore_pf() {
 	typeset backup="$1"
 	[ -n "$backup" ] && [ -f "$backup" ] || return 1
@@ -218,7 +241,7 @@ EOF
 		fi
 	fi
 	if grep -Eq '^[[:space:]]*pf=NO([[:space:]]|$)' \
-	    /etc/rc.conf /etc/rc.conf.local 2>/dev/null; then
+		/etc/rc.conf /etc/rc.conf.local 2>/dev/null; then
 		warn "PF is disabled in the rc configuration and will not start at boot."
 	fi
 	log "PF workstation policy installed and loaded."
@@ -326,6 +349,9 @@ configure_clamav() {
 	return "$status"
 }
 
+# Remove only the exact wxallowed token from the fourth fstab field; comments,
+# short records, and similarly named options are left alone. This edits the
+# boot-time policy only, so already mounted filesystems are unchanged.
 enforce_wx_mounts() {
 	typeset fstab_backup fstab_tmp
 	confirm "Remove every wxallowed option from /etc/fstab?" || return 0
@@ -384,6 +410,9 @@ enforce_wx_mounts() {
 	warn "Existing mounts are unchanged. Reboot is required to enforce the new flags."
 }
 
+# Apply the malloc audit mode to the running kernel before persisting it. If
+# writing or verifying sysctl.conf fails, restore the prior live value when it
+# was known and restore or remove the file according to its original state.
 harden_malloc() {
 	typeset malloc_old sysctl_tmp sysctl_backup
 	confirm "Enable vm.malloc_conf=S system-wide (security-audit mode)?" || return 0
@@ -408,7 +437,7 @@ harden_malloc() {
 	track_tmp "$sysctl_tmp"
 	if [ -f /etc/sysctl.conf ]; then
 		if ! awk '!/^[[:space:]]*vm\.malloc_conf[[:space:]]*=/' \
-		    /etc/sysctl.conf >"$sysctl_tmp"; then
+			/etc/sysctl.conf >"$sysctl_tmp"; then
 			rm -f "$sysctl_tmp"
 			error "Could not rewrite /etc/sysctl.conf; the setting is active only until reboot."
 			restore_runtime_malloc "$malloc_old"
@@ -431,7 +460,7 @@ harden_malloc() {
 	fi
 	rm -f "$sysctl_tmp"
 	if ! grep -qx 'vm.malloc_conf=S' /etc/sysctl.conf ||
-	    [ "$(sysctl -n vm.malloc_conf)" != "S" ]; then
+		[ "$(sysctl -n vm.malloc_conf)" != "S" ]; then
 		restore_or_remove "$sysctl_backup" /etc/sysctl.conf ||
 			warn "Could not restore /etc/sysctl.conf from $sysctl_backup."
 		error "The vm.malloc_conf change could not be verified."
@@ -441,6 +470,9 @@ harden_malloc() {
 	log "vm.malloc_conf=S is active and persistent."
 }
 
+# Replace only direct standard daily/weekly/monthly cron invocations. Compound
+# lines are retained to avoid disabling their unrelated commands; the new
+# anacron file and root crontab are installed in stages with best-effort restore.
 configure_anacron() {
 	typeset cron_old cron_err cron_backup cron_new anacron_tmp anacron_backup
 	typeset local_file unattended=0
@@ -449,7 +481,7 @@ configure_anacron() {
 	for local_file in /etc/daily.local /etc/weekly.local /etc/monthly.local; do
 		[ -f "$local_file" ] || continue
 		if grep -Eq '^[[:space:]]*[^#[:space:]].*(sysupgrade|pkg_add[[:space:]]+-u)' \
-		    "$local_file" 2>/dev/null; then
+			"$local_file" 2>/dev/null; then
 			warn "$local_file contains an unattended upgrade command."
 			unattended=1
 		fi
