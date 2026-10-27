@@ -60,8 +60,9 @@ Static review is required and sufficient for repository work:
 
 When the user explicitly permits command execution, `ksh -n hardening.ksh` is a
 syntax-only check and `shellcheck -s ksh hardening.ksh` is optional static
-analysis. Neither proves runtime behavior. Never run the script itself as a
-validation step.
+analysis. `cleanup_tmp` is invoked by the `EXIT` trap; retain a narrowly scoped
+`SC2329` suppression there if ShellCheck cannot infer that indirect call. Neither
+check proves runtime behavior. Never run the script itself as a validation step.
 
 ## Common problems
 
@@ -85,3 +86,19 @@ validation step.
 - `../../../README.md`
 - `../../../LICENSE`
 - OpenBSD `ksh(1)`, `sh(1)`, `mktemp(1)` and `install(1)` manual pages.
+
+## Maintenance & Continuous Learning
+
+Whenever this skill is used to change the repository, review this skill after
+the implementation. Correct procedures that proved wrong, update commands,
+paths, configuration and examples, incorporate reusable findings, and remove
+outdated assumptions. Review the applicable root and nested `AGENTS.md` files,
+specialized agents and related skills; update only the knowledge affected by
+the work. Validate local references and run
+`python3 scripts/validate-agent-knowledge.py --scope worktree` plus the
+applicable project checks. For pull request comparisons, use the documented
+`--scope range --base BASE_REF --head HEAD_REF` command. The canonical validator
+is read-only and is required even when a task restricts execution of project
+scripts; this does not authorize running installers or changing the host.
+Report checks actually performed. A structural pass does not prove semantic
+relevance, and a task is incomplete until synchronization is validated.
