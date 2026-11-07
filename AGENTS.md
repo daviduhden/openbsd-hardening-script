@@ -17,8 +17,8 @@ inside that scope unless the user explicitly asks for a different target.
 - `.agents/skills/` - task-specific procedures linked at the end of this file.
 
 There is no project build system, package manifest, or application test
-suite. The dedicated PR workflow runs only the read-only agent-validation
-contract tests and range gate; no project CI checks are configured.
+suite. The dedicated manual workflow runs only the read-only agent-validation
+contract tests and worktree validation; no project CI checks are configured.
 
 ## Architecture
 
@@ -163,8 +163,8 @@ After each change:
    edits to satisfy synchronization. For a project change, at least one
    relevant knowledge artifact must receive a substantive update.
 4. Run `perl scripts/validate-agent-knowledge.pl --scope worktree` and the
-   applicable project checks. For a pull request, CI compares the base and head
-   revisions with `--scope range --base BASE_SHA --head HEAD_SHA`.
+   applicable project checks. To compare committed revisions locally, use
+   `--scope range --base BASE_SHA --head HEAD_SHA`.
 5. Review the validator output and final diff, then report the synchronization
    result. Warnings require human review; a structural pass does not establish
    semantic relevance.
